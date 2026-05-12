@@ -1,43 +1,74 @@
-const crypto = require('node:crypto');
-const fs = require('node:fs');
-const path = require('node:path');
-const { execFileSync } = require('node:child_process');
+import * as crypto from 'node:crypto';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
-function runGit(repoPath, args) {
+export type GitFileChange = {
+  status: string;
+  path: string;
+  oldPath?: string;
+};
+
+export type GitHistoryRecord = {
+  sha: string;
+  parents: string[];
+  author: { name: string; email: string };
+  authoredAt: string;
+  subject: string;
+  files: GitFileChange[];
+  paths: string[];
+};
+
+export type MineHistoryOptions = {
+  repoPath?: string;
+  outPath?: string;
+};
+
+export type MineHistoryResult = {
+  repoRoot: string;
+  headSha: string;
+  cacheHit: boolean;
+  cacheFile: string;
+  count: number;
+  records: GitHistoryRecord[];
+  jsonl: string;
+};
+
+export function runGit(repoPath: string, args: string[]): string {
   return execFileSync('git', ['-C', repoPath, ...args], { encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 });
 }
 
-function resolveRepoRoot(repoPath) {
-  const resolved = path.resolve(repoPath || process.cwd());
+export function resolveRepoRoot(repoPath = process.cwd()): string {
+  const resolved = path.resolve(repoPath);
   const root = runGit(resolved, ['rev-parse', '--show-toplevel']).trim();
   if (!root) throw new Error(`Unable to resolve git repo root from ${resolved}`);
   return root;
 }
 
-function getHeadSha(repoRoot) {
+export function getHeadSha(repoRoot: string): string {
   return runGit(repoRoot, ['rev-parse', 'HEAD']).trim();
 }
 
-function cacheKeyFor({ repoRoot, headSha, version = 1 }) {
+export function cacheKeyFor({ repoRoot, headSha, version = 1 }: { repoRoot: string; headSha: string; version?: number }): string {
   return crypto
     .createHash('sha256')
     .update(JSON.stringify({ repoRoot, headSha, version }))
     .digest('hex');
 }
 
-function cacheFileFor(repoRoot, cacheKey) {
+export function cacheFileFor(repoRoot: string, cacheKey: string): string {
   return path.join(repoRoot, '.repo-arch', 'cache', `history-${cacheKey}.jsonl`);
 }
 
-function ensureDir(filePath) {
+function ensureDir(filePath: string): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
 }
 
-function parseGitHistory(logOutput) {
-  const records = [];
-  let current = null;
+export function parseGitHistory(logOutput: string): GitHistoryRecord[] {
+  const records: GitHistoryRecord[] = [];
+  let current: GitHistoryRecord | null = null;
 
-  const pushCurrent = () => {
+  const pushCurrent = (): void => {
     if (!current) return;
     current.paths = current.files.map(file => file.path);
     records.push(current);
@@ -56,7 +87,8 @@ function parseGitHistory(logOutput) {
         author: { name: authorName, email: authorEmail },
         authoredAt,
         subject,
-        files: []
+        files: [],
+        paths: []
       };
       continue;
     }
@@ -77,25 +109,25 @@ function parseGitHistory(logOutput) {
   return records;
 }
 
-function mineHistory({ repoPath, outPath } = {}) {
+export function mineHistory({ repoPath, outPath }: MineHistoryOptions = {}): MineHistoryResult {
   const repoRoot = resolveRepoRoot(repoPath);
   const headSha = getHeadSha(repoRoot);
   const cacheKey = cacheKeyFor({ repoRoot, headSha, version: 1 });
   const cacheFile = cacheFileFor(repoRoot, cacheKey);
 
   let cacheHit = false;
-  let records;
+  let records: GitHistoryRecord[];
 
   if (fs.existsSync(cacheFile)) {
     cacheHit = true;
     const cached = fs.readFileSync(cacheFile, 'utf8');
-    records = cached.trim() ? cached.trim().split(/\r?\n/).map(line => JSON.parse(line)) : [];
+    records = cached.trim() ? cached.trim().split(/\r?\n/).map(line => JSON.parse(line) as GitHistoryRecord) : [];
   } else {
     const logOutput = runGit(repoRoot, [
       'log',
       '--reverse',
       '--date=iso-strict',
-      `--format=@@@%H%x1f%P%x1f%an%x1f%ae%x1f%ad%x1f%s`,
+      '--format=@@@%H%x1f%P%x1f%an%x1f%ae%x1f%ad%x1f%s',
       '--name-status',
       '--find-renames=50%'
     ]);
@@ -121,13 +153,3 @@ function mineHistory({ repoPath, outPath } = {}) {
     jsonl
   };
 }
-
-module.exports = {
-  runGit,
-  resolveRepoRoot,
-  getHeadSha,
-  cacheKeyFor,
-  cacheFileFor,
-  parseGitHistory,
-  mineHistory
-};

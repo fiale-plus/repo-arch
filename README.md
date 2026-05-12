@@ -23,7 +23,7 @@ Cards are designed to be inspectable by humans, linked to evidence, stored local
 
 ## Current MVP
 
-The first implementation slice is local git-history mining:
+The first implementation slice is local git-history mining, implemented in TypeScript from day one:
 
 ```bash
 repo-arch mine-history --repo . --out history.jsonl

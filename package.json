@@ -3,13 +3,19 @@
   "version": "0.1.0",
   "private": false,
   "description": "Project archaeology and repo memory tooling",
-  "type": "commonjs",
+  "type": "module",
   "bin": {
-    "repo-arch": "./src/cli.js"
+    "repo-arch": "./src/cli.ts"
   },
   "scripts": {
-    "test": "node --test",
-    "mine-history": "node ./src/cli.js mine-history"
+    "test": "tsx --test",
+    "typecheck": "tsc --noEmit",
+    "mine-history": "tsx ./src/cli.ts mine-history"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
   },
   "engines": {
     "node": ">=20"

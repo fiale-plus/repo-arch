@@ -1,9 +1,15 @@
-#!/usr/bin/env node
-const fs = require('node:fs');
-const path = require('node:path');
-const { mineHistory } = require('./git-history');
+#!/usr/bin/env tsx
+import * as path from 'node:path';
+import { mineHistory } from './git-history.js';
 
-function usage() {
+export type ParsedArgs = {
+  help?: boolean;
+  repo?: string;
+  out?: string;
+  _: string[];
+};
+
+export function usage(): string {
   return `repo-arch
 
 Usage:
@@ -17,8 +23,8 @@ Options:
 `;
 }
 
-function parseArgs(argv) {
-  const args = { _: [] };
+export function parseArgs(argv: string[]): ParsedArgs {
+  const args: ParsedArgs = { _: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (token === '--help' || token === '-h') {
@@ -38,7 +44,7 @@ function parseArgs(argv) {
   return args;
 }
 
-function main(argv = process.argv.slice(2)) {
+export function main(argv: string[] = process.argv.slice(2)): { ok: boolean; help?: boolean; error?: string } {
   const args = parseArgs(argv);
   const command = args._[0];
 
@@ -54,7 +60,7 @@ function main(argv = process.argv.slice(2)) {
     } else {
       process.stderr.write(`wrote ${result.count} commits to ${path.resolve(args.out)}${result.cacheHit ? ' (cache hit)' : ''}\n`);
     }
-    return { ok: true, ...result };
+    return { ok: true };
   }
 
   process.stderr.write(`Unknown command: ${command}\n\n${usage()}`);
@@ -62,13 +68,11 @@ function main(argv = process.argv.slice(2)) {
   return { ok: false, error: `Unknown command: ${command}` };
 }
 
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   try {
     main();
   } catch (error) {
-    process.stderr.write(`${error && error.stack ? error.stack : error}\n`);
+    process.stderr.write(`${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
     process.exitCode = 1;
   }
 }
-
-module.exports = { main, parseArgs, usage };

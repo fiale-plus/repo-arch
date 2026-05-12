@@ -1,16 +1,17 @@
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const test = require('node:test');
-const { execFileSync } = require('node:child_process');
-const { mineHistory } = require('../src/git-history');
+import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import test from 'node:test';
+import { execFileSync } from 'node:child_process';
+import { mineHistory } from '../src/git-history.js';
 
-function git(cwd, args) {
+function git(cwd: string, args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 }
 
-function setupRepo() {
+function setupRepo(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'repo-arch-test-'));
   git(root, ['init', '-b', 'main']);
   git(root, ['config', 'user.name', 'Test User']);
@@ -34,10 +35,10 @@ test('mineHistory extracts commit metadata and files', () => {
 
   assert.equal(result.count, 2);
   assert.equal(result.cacheHit, false);
-  assert.equal(result.records[0].subject, 'initial add');
-  assert.deepEqual(result.records[0].files, [{ status: 'A', path: 'a.txt' }]);
-  assert.equal(result.records[1].subject, 'update files');
-  assert.deepEqual(result.records[1].paths.sort(), ['a.txt', 'b.txt']);
+  assert.equal(result.records[0]?.subject, 'initial add');
+  assert.deepEqual(result.records[0]?.files, [{ status: 'A', path: 'a.txt' }]);
+  assert.equal(result.records[1]?.subject, 'update files');
+  assert.deepEqual(result.records[1]?.paths.sort(), ['a.txt', 'b.txt']);
   assert.equal(fs.existsSync(result.cacheFile), true);
 });
 
@@ -54,11 +55,11 @@ test('mineHistory reuses cached JSONL for unchanged HEAD', () => {
 test('CLI writes JSONL to file', () => {
   const repo = setupRepo();
   const out = path.join(repo, 'history.jsonl');
-  const cli = path.resolve(__dirname, '../src/cli.js');
-  execFileSync('node', [cli, 'mine-history', '--repo', repo, '--out', out], { encoding: 'utf8' });
+  const cli = fileURLToPath(new URL('../src/cli.ts', import.meta.url));
+  execFileSync('node', ['--import', 'tsx', cli, 'mine-history', '--repo', repo, '--out', out], { encoding: 'utf8' });
 
   const lines = fs.readFileSync(out, 'utf8').trim().split(/\r?\n/);
   assert.equal(lines.length, 2);
-  const parsed = lines.map(line => JSON.parse(line));
-  assert.equal(parsed[0].sha.length > 0, true);
+  const parsed = lines.map(line => JSON.parse(line) as { sha: string });
+  assert.equal(parsed[0]?.sha.length > 0, true);
 });
