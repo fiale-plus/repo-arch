@@ -3,7 +3,7 @@ import test from 'node:test';
 import { generateDataset, generateQa, generateReviewWarning, generateRiskClassification } from '../src/training.js';
 import type { InsightCard } from '../src/cards.js';
 
-function makeCard(overrides: Partial<InsightCard>): InsightCard {
+function makeCard(overrides: Partial<InsightCard> = {}): InsightCard {
   return {
     id: 'test-card-00000001',
     type: 'repeated-fix',
