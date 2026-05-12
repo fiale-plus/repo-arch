@@ -11,6 +11,8 @@ import { cachedOrGenerate, invalidateCache } from './cache.js';
 import { setCardStatus, listReviewState, getStatusOverrideMap, type ReviewMap } from './review.js';
 import { whyContextPack, diffContextPack, cardsContextPack } from './context-pack.js';
 import { checkStaleness, formatStaleness } from './staleness.js';
+import { similar } from './similar.js';
+import { buildIndex, loadIndex } from './embedder.js';
 
 export type ParsedArgs = {
   help?: boolean;
@@ -42,6 +44,8 @@ Usage:
   repo-arch cards --invalidate
   repo-arch invalidate-cache [--repo <path>]
   repo-arch check-stale [--repo <path>] [--json]
+  repo-arch index [--repo <path>]
+  repo-arch similar <query> [--repo <path>] [--json]
 
 Options:
   --repo   Path to a git repository (default: current directory)
@@ -99,7 +103,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
   return args;
 }
 
-export function main(argv: string[] = process.argv.slice(2)): { ok: boolean; help?: boolean; error?: string } {
+export async function main(argv: string[] = process.argv.slice(2)): Promise<{ ok: boolean; help?: boolean; error?: string }> {
   const args = parseArgs(argv);
   const command = args._[0];
 
@@ -250,6 +254,49 @@ export function main(argv: string[] = process.argv.slice(2)): { ok: boolean; hel
       } else {
         fs.writeFileSync(path.resolve(args.out), output, 'utf8');
         process.stderr.write(`wrote staleness check to ${path.resolve(args.out)}\n`);
+      }
+    }
+    return { ok: true };
+  }
+
+  if (command === 'index') {
+    const repoRoot = resolveRepoRoot(args.repo);
+    const generateFn = () => {
+      const history = mineHistory({ repoPath: args.repo });
+      const classified = classifyHistory(history.records);
+      return generateCards(classified, {}, getStatusOverrideMap(repoRoot));
+    };
+    const { cards } = cachedOrGenerate(repoRoot, generateFn);
+    const entries = cards.map(card => ({
+      id: card.id,
+      text: `${card.title}. ${card.suggestion} ${card.supportingCommits.map(c => c.subject).join('. ')}`,
+      source: 'card' as const,
+      metadata: { type: card.type, confidence: String(card.confidence), status: card.status },
+    }));
+    const index = await buildIndex(entries, { repoPath: args.repo });
+    process.stderr.write(`indexed ${index.entries.length} entries at ${index.headSha.slice(0, 12)}\n`);
+    if (args.json) {
+      process.stdout.write(JSON.stringify({ indexed: index.entries.length, headSha: index.headSha, model: index.model }, null, 2) + '\n');
+    }
+    return { ok: true };
+  }
+
+  if (command === 'similar') {
+    const query = args._.slice(1).join(' ');
+    if (!query) {
+      process.stderr.write('Error: missing query\n');
+      process.exitCode = 1;
+      return { ok: false, error: 'Missing query' };
+    }
+    const result = await similar(query, { repoPath: args.repo, topK: args.maxCards ?? 5 });
+    if (args.json) {
+      process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    } else {
+      process.stdout.write(`\n  Similar to: "${query}"\n`);
+      process.stdout.write(`  Index: ${result.indexStats.entries} entries (${result.indexStats.model}) at ${result.indexStats.headSha}\n\n`);
+      for (const r of result.results) {
+        process.stdout.write(`  ${r.score.toFixed(3)}  ${r.text.slice(0, 100)}...\n`);
+        process.stdout.write(`        [${r.id.slice(0, 10)}] ${r.metadata.type}\n\n`);
       }
     }
     return { ok: true };
