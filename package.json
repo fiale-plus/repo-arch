@@ -1,0 +1,23 @@
+{
+  "name": "repo-arch",
+  "version": "0.1.0",
+  "private": false,
+  "description": "Project archaeology and repo memory tooling",
+  "type": "module",
+  "bin": {
+    "repo-arch": "./src/cli.ts"
+  },
+  "scripts": {
+    "test": "tsx --test",
+    "typecheck": "tsc --noEmit",
+    "mine-history": "tsx ./src/cli.ts mine-history"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
