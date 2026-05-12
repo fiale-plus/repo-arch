@@ -1,0 +1,17 @@
+{
+  "name": "repo-arch",
+  "version": "0.1.0",
+  "private": false,
+  "description": "Project archaeology and repo memory tooling",
+  "type": "commonjs",
+  "bin": {
+    "repo-arch": "./src/cli.js"
+  },
+  "scripts": {
+    "test": "node --test",
+    "mine-history": "node ./src/cli.js mine-history"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

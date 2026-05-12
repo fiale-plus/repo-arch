@@ -21,15 +21,23 @@ Repo-Arch centers on validated memory cards:
 
 Cards are designed to be inspectable by humans, linked to evidence, stored locally, and served to agents.
 
+## Current MVP
+
+The first implementation slice is local git-history mining:
+
+```bash
+repo-arch mine-history --repo . --out history.jsonl
+```
+
+It extracts commit SHA, parents, author, timestamp, subject, and changed files into stable JSONL, with a small cache keyed by repo path + HEAD.
+
 ## Intended product surface
 
 MVP CLI shape:
 
 ```bash
+repo-arch mine-history --repo <path> --out <file>
 repo-arch mine
-repo-arch cards
-repo-arch why <path-or-topic>
-repo-arch check-diff
 ```
 
 Planned agent interface:
@@ -48,7 +56,7 @@ Repo-Arch is intended for sensitive engineering history. Raw Slack/Jira exports,
 
 ## Status
 
-This repository currently contains the initial PRD and product direction. See [PRD.md](./PRD.md) for the full product requirements document.
+This repository currently contains the initial PRD and the first git-history mining slice. See [PRD.md](./PRD.md) for the full product requirements document.
 
 ## License
 
