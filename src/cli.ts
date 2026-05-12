@@ -6,6 +6,8 @@ import { classifyHistory } from './signals.js';
 import { generateCards, CARD_GENERATORS } from './cards.js';
 import { why, formatWhy } from './why.js';
 import { checkDiff, formatCheckDiff } from './check-diff.js';
+import { resolveRepoRoot, getHeadSha } from './git-history.js';
+import { cachedOrGenerate, invalidateCache } from './cache.js';
 
 export type ParsedArgs = {
   help?: boolean;
@@ -15,6 +17,8 @@ export type ParsedArgs = {
   head?: string;
   minConfidence?: number;
   maxCards?: number;
+  noCache?: boolean;
+  invalidate?: boolean;
   _: string[];
 };
 
@@ -28,6 +32,8 @@ Usage:
   repo-arch cards [--repo <path>] [--out <file>] [--min-confidence <float>] [--max-cards <number>]
   repo-arch why <file-path> [--repo <path>]
   repo-arch check-diff [--repo <path>] [--base <ref>] [--head <ref>]
+  repo-arch cards --invalidate
+  repo-arch invalidate-cache [--repo <path>]
 
 Options:
   --repo   Path to a git repository (default: current directory)
@@ -68,6 +74,14 @@ export function parseArgs(argv: string[]): ParsedArgs {
       args.head = argv[++i];
       continue;
     }
+    if (token === '--no-cache') {
+      args.noCache = true;
+      continue;
+    }
+    if (token === '--invalidate') {
+      args.invalidate = true;
+      continue;
+    }
     args._.push(token);
   }
   return args;
@@ -106,17 +120,42 @@ export function main(argv: string[] = process.argv.slice(2)): { ok: boolean; hel
   }
 
   if (command === 'cards') {
-    const history = mineHistory({ repoPath: args.repo });
-    const classified = classifyHistory(history.records);
-    const cards = generateCards(classified, {
-      minConfidence: args.minConfidence,
-      maxCards: args.maxCards,
-    });
+    const repoRoot = resolveRepoRoot(args.repo);
+
+    // Invalidate mode
+    if (args.invalidate) {
+      const removed = invalidateCache(repoRoot);
+      process.stderr.write(`removed ${removed} cached card file${removed !== 1 ? 's' : ''}\n`);
+      return { ok: true };
+    }
+
+    const generateFn = () => {
+      const history = mineHistory({ repoPath: args.repo });
+      const classified = classifyHistory(history.records);
+      return generateCards(classified, {
+        minConfidence: args.minConfidence,
+        maxCards: args.maxCards,
+      });
+    };
+
+    let cards: import('./cards.js').InsightCard[];
+    let cacheHit = false;
+    let headSha = '';
+
+    if (args.noCache) {
+      cards = generateFn();
+      headSha = getHeadSha(repoRoot);
+    } else {
+      const result = cachedOrGenerate(repoRoot, generateFn);
+      cards = result.cards;
+      cacheHit = result.cacheHit;
+      headSha = result.headSha;
+    }
+
     const jsonl = cards.map(c => JSON.stringify(c)).join('\n') + (cards.length ? '\n' : '');
     if (!args.out) {
-      // Pretty terminal summary
-      process.stdout.write(`\n  Repo-Arch Cards for ${history.repoRoot}\n`);
-      process.stdout.write(`  ${history.headSha.slice(0, 12)} | ${history.count} commits\n\n`);
+      process.stdout.write(`\n  Repo-Arch Cards for ${repoRoot}\n`);
+      process.stdout.write(`  ${headSha.slice(0, 12)}${cacheHit ? ' (cached)' : ''} | ${cards.length} cards\n\n`);
       for (const card of cards) {
         const icon = card.type === 'churn-hotspot' ? '\u26A1' : card.type === 'repeated-fix' ? '\u274C' : card.type === 'revert-pattern' ? '\u21A9' : card.type === 'test-gap' ? '\u26A0' : card.type === 'rationale-cluster' ? '\uD83D\uDCA1' : '\uD83D\uDD17';
         process.stdout.write(`  ${icon} ${card.title}\n`);
@@ -157,6 +196,13 @@ export function main(argv: string[] = process.argv.slice(2)): { ok: boolean; hel
       fs.writeFileSync(path.resolve(args.out), output, 'utf8');
       process.stderr.write(`wrote diff check to ${path.resolve(args.out)}\n`);
     }
+    return { ok: true };
+  }
+
+  if (command === 'invalidate-cache') {
+    const repoRoot = resolveRepoRoot(args.repo);
+    const removed = invalidateCache(repoRoot);
+    process.stderr.write(`removed ${removed} cached card file${removed !== 1 ? 's' : ''}\n`);
     return { ok: true };
   }
 
