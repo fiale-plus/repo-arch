@@ -1,3 +1,4 @@
+import * as crypto from 'node:crypto';
 import { type ClassifiedCommit } from './signals.js';
 
 export type CardType =
@@ -8,10 +9,14 @@ export type CardType =
   | 'revert-pattern'
   | 'co-change';
 
+export type CardStatus = 'pending' | 'accepted' | 'rejected' | 'stale' | 'superseded';
+
 export type InsightCard = {
+  id: string;
   type: CardType;
   title: string;
   confidence: number;
+  status: CardStatus;
   supportingCommits: { sha: string; subject: string }[];
   affectedFiles: string[];
   suggestion: string;
@@ -32,9 +37,22 @@ export type CardsResult = {
   jsonl: string;
 };
 
+export function cardIdFrom(type: CardType, title: string, affectedFiles: string[]): string {
+  const raw = JSON.stringify({ type, title, files: [...affectedFiles].sort() });
+  return crypto.createHash('sha256').update(raw).digest('hex').slice(0, 16);
+}
+
+function toCard(data: { type: CardType; title: string; confidence: number; supportingCommits: { sha: string; subject: string }[]; affectedFiles: string[]; suggestion: string }, statusOverride?: CardStatus): InsightCard {
+  return {
+    ...data,
+    id: cardIdFrom(data.type, data.title, data.affectedFiles),
+    status: statusOverride ?? 'pending',
+  };
+}
+
 // ─── Generators ────────────────────────────────────────────
 
-function churnHotspotCards(records: ClassifiedCommit[]): InsightCard[] {
+function churnHotspotCards(records: ClassifiedCommit[]): Omit<InsightCard, 'id' | 'status'>[] {
   const fileCount = new Map<string, number>();
   for (const record of records) {
     const seen = new Set<string>();
@@ -50,10 +68,11 @@ function churnHotspotCards(records: ClassifiedCommit[]): InsightCard[] {
   const threshold = Math.max(2, Math.round(records.length * 0.08));
   const hotspots = sorted.filter(([, count]) => count >= threshold).slice(0, 5);
 
-  return hotspots.map(([file, count]): InsightCard => ({
+  return hotspots.map(([file, count]) => ({
     type: 'churn-hotspot',
     title: `High-churn file: ${file}`,
     confidence: Math.min(0.9, parseFloat((0.4 + (count / records.length) * 0.5).toFixed(2))),
+    status: 'pending',
     supportingCommits: records
       .filter(r => r.files.some(f => f.path === file))
       .slice(0, 5)
@@ -63,7 +82,7 @@ function churnHotspotCards(records: ClassifiedCommit[]): InsightCard[] {
   }));
 }
 
-function repeatedFixCards(records: ClassifiedCommit[]): InsightCard[] {
+function repeatedFixCards(records: ClassifiedCommit[]): Omit<InsightCard, 'id' | 'status'>[] {
   const fixRecords = records.filter(r => r.signals.some(s => s.type === 'fix'));
   const fileCount = new Map<string, { count: number; commits: ClassifiedCommit[] }>();
 
@@ -83,7 +102,7 @@ function repeatedFixCards(records: ClassifiedCommit[]): InsightCard[] {
   return [...fileCount.entries()]
     .filter(([, entry]) => entry.count >= 2)
     .slice(0, 5)
-    .map(([file, entry]): InsightCard => ({
+    .map(([file, entry]) => ({
       type: 'repeated-fix',
       title: `Repeated fixes in: ${file}`,
       confidence: Math.min(0.95, parseFloat((0.5 + (entry.count - 1) * 0.1).toFixed(2))),
@@ -93,7 +112,7 @@ function repeatedFixCards(records: ClassifiedCommit[]): InsightCard[] {
     }));
 }
 
-function rationaleClusterCards(records: ClassifiedCommit[]): InsightCard[] {
+function rationaleClusterCards(records: ClassifiedCommit[]): Omit<InsightCard, 'id' | 'status'>[] {
   const rationaleRecords = records.filter(r => r.signals.some(s => s.type === 'rationale'));
   if (rationaleRecords.length === 0) return [];
 
@@ -116,7 +135,7 @@ function rationaleClusterCards(records: ClassifiedCommit[]): InsightCard[] {
   return [...dirMap.entries()]
     .filter(([, records]) => records.length >= 2)
     .slice(0, 5)
-    .map(([dir, commits]): InsightCard => ({
+    .map(([dir, commits]) => ({
       type: 'rationale-cluster',
       title: `Design rationale cluster: ${dir}/`,
       confidence: parseFloat((0.5 + commits.length * 0.05).toFixed(2)),
@@ -126,7 +145,7 @@ function rationaleClusterCards(records: ClassifiedCommit[]): InsightCard[] {
     }));
 }
 
-function testGapCards(records: ClassifiedCommit[]): InsightCard[] {
+function testGapCards(records: ClassifiedCommit[]): Omit<InsightCard, 'id' | 'status'>[] {
   const isTestPath = (p: string) => /\.(test|spec)\./.test(p) || /__tests__\//.test(p) || /\/test\//.test(p);
 
   const sourceFiles = new Map<string, number>();
@@ -146,7 +165,7 @@ function testGapCards(records: ClassifiedCommit[]): InsightCard[] {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 4);
 
-  return filtered.map(([file, count]): InsightCard => ({
+  return filtered.map(([file, count]) => ({
     type: 'test-gap',
     title: `Possible test gap: ${file}`,
     confidence: Math.min(0.7, parseFloat((0.4 + count * 0.03).toFixed(2))),
@@ -159,7 +178,7 @@ function testGapCards(records: ClassifiedCommit[]): InsightCard[] {
   }));
 }
 
-function revertPatternCards(records: ClassifiedCommit[]): InsightCard[] {
+function revertPatternCards(records: ClassifiedCommit[]): Omit<InsightCard, 'id' | 'status'>[] {
   const revertRecords = records.filter(r => r.signals.some(s => s.type === 'revert'));
   if (revertRecords.length === 0) return [];
   const revert = records.filter(r => r.signals.some(s => s.type === 'revert'));
@@ -180,7 +199,7 @@ function revertPatternCards(records: ClassifiedCommit[]): InsightCard[] {
     ? [{ file: '<various>', count: revert.length }]
     : topFiles;
 
-  return suggestions.map(({ file, count }): InsightCard => ({
+  return suggestions.map(({ file, count }) => ({
     type: 'revert-pattern',
     title: `Reversion pattern${file !== '<various>' ? `: ${file}` : ''}`,
     confidence: Math.min(0.9, parseFloat((0.6 + (revert.length / records.length) * 0.3).toFixed(2))),
@@ -190,7 +209,7 @@ function revertPatternCards(records: ClassifiedCommit[]): InsightCard[] {
   }));
 }
 
-function coChangeCards(records: ClassifiedCommit[]): InsightCard[] {
+function coChangeCards(records: ClassifiedCommit[]): Omit<InsightCard, 'id' | 'status'>[] {
   const pairCount = new Map<string, number>();
   const pairCommits = new Map<string, ClassifiedCommit[]>();
 
@@ -211,7 +230,7 @@ function coChangeCards(records: ClassifiedCommit[]): InsightCard[] {
     .filter(([, count]) => count >= 2)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
-    .map(([pairKey, count]): InsightCard => {
+    .map(([pairKey, count]) => {
       const [a, b] = pairKey.split(' <-> ');
       return {
         type: 'co-change',
@@ -229,7 +248,7 @@ function coChangeCards(records: ClassifiedCommit[]): InsightCard[] {
 export const CARD_GENERATORS: Array<{
   type: CardType;
   label: string;
-  run: (records: ClassifiedCommit[]) => InsightCard[];
+  run: (records: ClassifiedCommit[]) => Omit<InsightCard, 'id' | 'status'>[];
 }> = [
   { type: 'churn-hotspot', label: 'Churn hotspots', run: churnHotspotCards },
   { type: 'repeated-fix', label: 'Repeated fix areas', run: repeatedFixCards },
@@ -244,11 +263,12 @@ export const CARD_GENERATORS: Array<{
 export function generateCards(
   classifiedRecords: ClassifiedCommit[],
   options: { minConfidence?: number; maxCards?: number } = {},
+  statusOverrides?: Record<string, CardStatus>,
 ): InsightCard[] {
   const minConfidence = options.minConfidence ?? 0.3;
   const maxCards = options.maxCards ?? 20;
 
-  const allCards: InsightCard[] = [];
+  const allCards: Omit<InsightCard, 'id' | 'status'>[] = [];
   for (const generator of CARD_GENERATORS) {
     const cards = generator.run(classifiedRecords);
     allCards.push(...cards);
@@ -257,5 +277,6 @@ export function generateCards(
   return allCards
     .filter(card => card.confidence >= minConfidence)
     .sort((a, b) => b.confidence - a.confidence)
-    .slice(0, maxCards);
+    .slice(0, maxCards)
+    .map(data => toCard(data, statusOverrides?.[cardIdFrom(data.type, data.title, data.affectedFiles)]));
 }
