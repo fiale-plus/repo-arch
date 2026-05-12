@@ -20,9 +20,11 @@ function setupRepo(): string {
 
 function mockCards(): InsightCard[] {
   return [{
+    id: 'test-card-00000000',
     type: 'churn-hotspot',
     title: 'Test card',
     confidence: 0.8,
+    status: 'pending',
     supportingCommits: [{ sha: 'abc123', subject: 'test' }],
     affectedFiles: ['f.txt'],
     suggestion: 'Test suggestion',

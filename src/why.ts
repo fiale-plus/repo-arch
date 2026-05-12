@@ -2,6 +2,7 @@ import { type ClassifiedCommit } from './signals.js';
 import { type InsightCard, generateCards } from './cards.js';
 import { mineHistory } from './git-history.js';
 import { classifyHistory } from './signals.js';
+import { getStatusOverrideMap } from './review.js';
 
 export type CoChangePartner = {
   path: string;
@@ -28,7 +29,7 @@ export function why(filePath: string, options: { repoPath?: string } = {}): WhyR
   const repoRoot = mineHistory({ repoPath: options.repoPath }).repoRoot;
   const history = mineHistory({ repoPath: options.repoPath });
   const classified = classifyHistory(history.records);
-  const cards = generateCards(classified, { minConfidence: 0.3 });
+  const cards = generateCards(classified, { minConfidence: 0.3 }, getStatusOverrideMap(repoRoot));
 
   // Filter commits that touch the specified file
   const touchingCommits = classified.filter(record =>

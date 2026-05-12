@@ -8,6 +8,7 @@ import { why, formatWhy } from './why.js';
 import { checkDiff, formatCheckDiff } from './check-diff.js';
 import { resolveRepoRoot, getHeadSha } from './git-history.js';
 import { cachedOrGenerate, invalidateCache } from './cache.js';
+import { setCardStatus, listReviewState, getStatusOverrideMap, type ReviewMap } from './review.js';
 
 export type ParsedArgs = {
   help?: boolean;
@@ -32,6 +33,9 @@ Usage:
   repo-arch cards [--repo <path>] [--out <file>] [--min-confidence <float>] [--max-cards <number>]
   repo-arch why <file-path> [--repo <path>]
   repo-arch check-diff [--repo <path>] [--base <ref>] [--head <ref>]
+  repo-arch accept <card-id> [--repo <path>]
+  repo-arch reject <card-id> [--repo <path>]
+  repo-arch review list [--repo <path>]
   repo-arch cards --invalidate
   repo-arch invalidate-cache [--repo <path>]
 
@@ -135,7 +139,7 @@ export function main(argv: string[] = process.argv.slice(2)): { ok: boolean; hel
       return generateCards(classified, {
         minConfidence: args.minConfidence,
         maxCards: args.maxCards,
-      });
+      }, getStatusOverrideMap(repoRoot));
     };
 
     let cards: import('./cards.js').InsightCard[];
@@ -158,8 +162,9 @@ export function main(argv: string[] = process.argv.slice(2)): { ok: boolean; hel
       process.stdout.write(`  ${headSha.slice(0, 12)}${cacheHit ? ' (cached)' : ''} | ${cards.length} cards\n\n`);
       for (const card of cards) {
         const icon = card.type === 'churn-hotspot' ? '\u26A1' : card.type === 'repeated-fix' ? '\u274C' : card.type === 'revert-pattern' ? '\u21A9' : card.type === 'test-gap' ? '\u26A0' : card.type === 'rationale-cluster' ? '\uD83D\uDCA1' : '\uD83D\uDD17';
-        process.stdout.write(`  ${icon} ${card.title}\n`);
-        process.stdout.write(`     Confidence: ${card.confidence} | ${card.supportingCommits.length} commits\n`);
+        const statusTag = card.status === 'accepted' ? ' ✅' : card.status === 'rejected' ? ' [rejected]' : '';
+        process.stdout.write(`  ${icon} ${card.title}${statusTag}\n`);
+        process.stdout.write(`     [${card.id.slice(0, 10)}] Confidence: ${card.confidence} | ${card.supportingCommits.length} commits\n`);
         process.stdout.write(`     ${card.suggestion}\n\n`);
       }
     } else {
@@ -203,6 +208,54 @@ export function main(argv: string[] = process.argv.slice(2)): { ok: boolean; hel
     const repoRoot = resolveRepoRoot(args.repo);
     const removed = invalidateCache(repoRoot);
     process.stderr.write(`removed ${removed} cached card file${removed !== 1 ? 's' : ''}\n`);
+    return { ok: true };
+  }
+
+  if (command === 'accept') {
+    const cardId = args._[1];
+    if (!cardId) {
+      process.stderr.write('Error: missing card-id\n');
+      process.exitCode = 1;
+      return { ok: false, error: 'Missing card-id' };
+    }
+    const repoRoot = resolveRepoRoot(args.repo);
+    const entry = setCardStatus(repoRoot, cardId, 'accepted');
+    process.stderr.write(`accepted card ${cardId} at ${entry?.updatedAt}\n`);
+    return { ok: true };
+  }
+
+  if (command === 'reject') {
+    const cardId = args._[1];
+    if (!cardId) {
+      process.stderr.write('Error: missing card-id\n');
+      process.exitCode = 1;
+      return { ok: false, error: 'Missing card-id' };
+    }
+    const repoRoot = resolveRepoRoot(args.repo);
+    const entry = setCardStatus(repoRoot, cardId, 'rejected');
+    process.stderr.write(`rejected card ${cardId} at ${entry?.updatedAt}\n`);
+    return { ok: true };
+  }
+
+  if (command === 'review') {
+    const sub = args._[1];
+    if (sub === 'list') {
+      const repoRoot = resolveRepoRoot(args.repo);
+      const state = listReviewState(repoRoot);
+      const entries = Object.entries(state);
+      if (entries.length === 0) {
+        process.stdout.write('  No reviewed cards.\n');
+      } else {
+        process.stdout.write(`  Review state (${entries.length} cards)\n\n`);
+        for (const [id, entry] of entries) {
+          process.stdout.write(`  [${id.slice(0, 10)}] ${entry.status}  ${entry.updatedAt.slice(0, 10)}\n`);
+        }
+      }
+    } else {
+      process.stderr.write(`Usage: repo-arch review list\n`);
+      process.exitCode = 1;
+      return { ok: false, error: 'Expected subcommand: list' };
+    }
     return { ok: true };
   }
 

@@ -1,6 +1,7 @@
 import { mineHistory, runGit, resolveRepoRoot, type GitFileChange } from './git-history.js';
 import { classifyHistory, type ClassifiedCommit, type CommitSignal } from './signals.js';
 import { generateCards, type InsightCard } from './cards.js';
+import { getStatusOverrideMap } from './review.js';
 
 export type DiffWarning = {
   filePath: string;
@@ -148,7 +149,7 @@ export function checkDiff(options: CheckDiffOptions = {}): CheckDiffResult {
   // Run the full pipeline once
   const history = mineHistory({ repoPath: repoRoot });
   const classified = classifyHistory(history.records);
-  const cards = generateCards(classified, { minConfidence: 0.3 });
+  const cards = generateCards(classified, { minConfidence: 0.3 }, getStatusOverrideMap(repoRoot));
 
   const warnings: DiffWarning[] = [];
   for (const { path: filePath, status } of changedFiles) {
