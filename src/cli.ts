@@ -10,6 +10,7 @@ import { resolveRepoRoot, getHeadSha } from './git-history.js';
 import { cachedOrGenerate, invalidateCache } from './cache.js';
 import { setCardStatus, listReviewState, getStatusOverrideMap, type ReviewMap } from './review.js';
 import { whyContextPack, diffContextPack, cardsContextPack } from './context-pack.js';
+import { checkStaleness, formatStaleness } from './staleness.js';
 
 export type ParsedArgs = {
   help?: boolean;
@@ -40,6 +41,7 @@ Usage:
   repo-arch review list [--repo <path>]
   repo-arch cards --invalidate
   repo-arch invalidate-cache [--repo <path>]
+  repo-arch check-stale [--repo <path>] [--json]
 
 Options:
   --repo   Path to a git repository (default: current directory)
@@ -227,6 +229,29 @@ export function main(argv: string[] = process.argv.slice(2)): { ok: boolean; hel
     const repoRoot = resolveRepoRoot(args.repo);
     const removed = invalidateCache(repoRoot);
     process.stderr.write(`removed ${removed} cached card file${removed !== 1 ? 's' : ''}\n`);
+    return { ok: true };
+  }
+
+  if (command === 'check-stale' || command === 'stale') {
+    const repoRoot = resolveRepoRoot(args.repo);
+    const generateFn = () => {
+      const history = mineHistory({ repoPath: args.repo });
+      const classified = classifyHistory(history.records);
+      return generateCards(classified, {}, getStatusOverrideMap(repoRoot));
+    };
+    const { cards } = cachedOrGenerate(repoRoot, generateFn);
+    const summary = checkStaleness(cards, { repoPath: args.repo });
+    if (args.json) {
+      process.stdout.write(JSON.stringify(summary, null, 2) + '\n');
+    } else {
+      const output = formatStaleness(summary);
+      if (!args.out) {
+        process.stdout.write(output);
+      } else {
+        fs.writeFileSync(path.resolve(args.out), output, 'utf8');
+        process.stderr.write(`wrote staleness check to ${path.resolve(args.out)}\n`);
+      }
+    }
     return { ok: true };
   }
 
