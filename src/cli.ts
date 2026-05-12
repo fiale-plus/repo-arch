@@ -3,11 +3,14 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { mineHistory } from './git-history.js';
 import { classifyHistory } from './signals.js';
+import { generateCards, CARD_GENERATORS } from './cards.js';
 
 export type ParsedArgs = {
   help?: boolean;
   repo?: string;
   out?: string;
+  minConfidence?: number;
+  maxCards?: number;
   _: string[];
 };
 
@@ -18,10 +21,11 @@ Usage:
   repo-arch mine-history [--repo <path>] [--out <file>]
   repo-arch mine [--repo <path>] [--out <file>]
   repo-arch classify [--repo <path>] [--out <file>]
+  repo-arch cards [--repo <path>] [--out <file>] [--min-confidence <float>] [--max-cards <number>]
 
 Options:
   --repo   Path to a git repository (default: current directory)
-  --out    Write JSONL output to a file instead of stdout
+  --out    Write output to a file instead of stdout
   --help   Show help
 `;
 }
@@ -40,6 +44,14 @@ export function parseArgs(argv: string[]): ParsedArgs {
     }
     if (token === '--out') {
       args.out = argv[++i];
+      continue;
+    }
+    if (token === '--min-confidence') {
+      args.minConfidence = parseFloat(argv[++i]);
+      continue;
+    }
+    if (token === '--max-cards') {
+      args.maxCards = parseInt(argv[++i], 10);
       continue;
     }
     args._.push(token);
@@ -75,6 +87,31 @@ export function main(argv: string[] = process.argv.slice(2)): { ok: boolean; hel
     } else {
       fs.writeFileSync(args.out, jsonl, 'utf8');
       process.stderr.write(`wrote ${classified.length} classified commits to ${path.resolve(args.out)}\n`);
+    }
+    return { ok: true };
+  }
+
+  if (command === 'cards') {
+    const history = mineHistory({ repoPath: args.repo });
+    const classified = classifyHistory(history.records);
+    const cards = generateCards(classified, {
+      minConfidence: args.minConfidence,
+      maxCards: args.maxCards,
+    });
+    const jsonl = cards.map(c => JSON.stringify(c)).join('\n') + (cards.length ? '\n' : '');
+    if (!args.out) {
+      // Pretty terminal summary
+      process.stdout.write(`\n  Repo-Arch Cards for ${history.repoRoot}\n`);
+      process.stdout.write(`  ${history.headSha.slice(0, 12)} | ${history.count} commits\n\n`);
+      for (const card of cards) {
+        const icon = card.type === 'churn-hotspot' ? '\u26A1' : card.type === 'repeated-fix' ? '\u274C' : card.type === 'revert-pattern' ? '\u21A9' : card.type === 'test-gap' ? '\u26A0' : card.type === 'rationale-cluster' ? '\uD83D\uDCA1' : '\uD83D\uDD17';
+        process.stdout.write(`  ${icon} ${card.title}\n`);
+        process.stdout.write(`     Confidence: ${card.confidence} | ${card.supportingCommits.length} commits\n`);
+        process.stdout.write(`     ${card.suggestion}\n\n`);
+      }
+    } else {
+      fs.writeFileSync(path.resolve(args.out), jsonl, 'utf8');
+      process.stderr.write(`wrote ${cards.length} cards to ${path.resolve(args.out)}\n`);
     }
     return { ok: true };
   }
