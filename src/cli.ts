@@ -9,9 +9,11 @@ import { checkDiff, formatCheckDiff } from './check-diff.js';
 import { resolveRepoRoot, getHeadSha } from './git-history.js';
 import { cachedOrGenerate, invalidateCache } from './cache.js';
 import { setCardStatus, listReviewState, getStatusOverrideMap, type ReviewMap } from './review.js';
+import { whyContextPack, diffContextPack, cardsContextPack } from './context-pack.js';
 
 export type ParsedArgs = {
   help?: boolean;
+  json?: boolean;
   repo?: string;
   out?: string;
   base?: string;
@@ -31,8 +33,8 @@ Usage:
   repo-arch mine [--repo <path>] [--out <file>]
   repo-arch classify [--repo <path>] [--out <file>]
   repo-arch cards [--repo <path>] [--out <file>] [--min-confidence <float>] [--max-cards <number>]
-  repo-arch why <file-path> [--repo <path>]
-  repo-arch check-diff [--repo <path>] [--base <ref>] [--head <ref>]
+  repo-arch why <file-path> [--repo <path>] [--json]
+  repo-arch check-diff [--repo <path>] [--base <ref>] [--head <ref>] [--json]
   repo-arch accept <card-id> [--repo <path>]
   repo-arch reject <card-id> [--repo <path>]
   repo-arch review list [--repo <path>]
@@ -84,6 +86,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
     }
     if (token === '--invalidate') {
       args.invalidate = true;
+      continue;
+    }
+    if (token === '--json') {
+      args.json = true;
       continue;
     }
     args._.push(token);
@@ -157,7 +163,10 @@ export function main(argv: string[] = process.argv.slice(2)): { ok: boolean; hel
     }
 
     const jsonl = cards.map(c => JSON.stringify(c)).join('\n') + (cards.length ? '\n' : '');
-    if (!args.out) {
+    if (args.json) {
+      const pack = cardsContextPack('all cards', cards, headSha, cacheHit);
+      process.stdout.write(JSON.stringify(pack, null, 2) + '\n');
+    } else if (!args.out) {
       process.stdout.write(`\n  Repo-Arch Cards for ${repoRoot}\n`);
       process.stdout.write(`  ${headSha.slice(0, 12)}${cacheHit ? ' (cached)' : ''} | ${cards.length} cards\n\n`);
       for (const card of cards) {
@@ -182,24 +191,34 @@ export function main(argv: string[] = process.argv.slice(2)): { ok: boolean; hel
       return { ok: false, error: 'Missing file path' };
     }
     const result = why(filePath, { repoPath: args.repo });
-    const output = formatWhy(result);
-    if (!args.out) {
-      process.stdout.write(output);
+    if (args.json) {
+      const pack = whyContextPack(filePath, result.relatedCards, result.commitCount, result.signalSummary, []);
+      process.stdout.write(JSON.stringify(pack, null, 2) + '\n');
     } else {
-      fs.writeFileSync(path.resolve(args.out), output, 'utf8');
-      process.stderr.write(`wrote explanation to ${path.resolve(args.out)}\n`);
+      const output = formatWhy(result);
+      if (!args.out) {
+        process.stdout.write(output);
+      } else {
+        fs.writeFileSync(path.resolve(args.out), output, 'utf8');
+        process.stderr.write(`wrote explanation to ${path.resolve(args.out)}\n`);
+      }
     }
     return { ok: true };
   }
 
   if (command === 'check-diff' || command === 'diff') {
     const result = checkDiff({ repoPath: args.repo, base: args.base, head: args.head });
-    const output = formatCheckDiff(result);
-    if (!args.out) {
-      process.stdout.write(output);
+    if (args.json) {
+      const pack = diffContextPack(args.base ?? 'HEAD~1', args.head ?? 'HEAD', result.changedFiles, result.warnings);
+      process.stdout.write(JSON.stringify(pack, null, 2) + '\n');
     } else {
-      fs.writeFileSync(path.resolve(args.out), output, 'utf8');
-      process.stderr.write(`wrote diff check to ${path.resolve(args.out)}\n`);
+      const output = formatCheckDiff(result);
+      if (!args.out) {
+        process.stdout.write(output);
+      } else {
+        fs.writeFileSync(path.resolve(args.out), output, 'utf8');
+        process.stderr.write(`wrote diff check to ${path.resolve(args.out)}\n`);
+      }
     }
     return { ok: true };
   }
