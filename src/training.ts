@@ -199,3 +199,101 @@ export function formatDataset(result: DatasetResult): string {
 
   return lines.join('\n');
 }
+
+export type TrainOptions = {
+  repoPath?: string;
+  outPath?: string;
+  model?: string;
+  iters?: number;
+  adapterName?: string;
+  learningRate?: number;
+  /** Whether to actually run training (vs just printing the command) */
+  run?: boolean;
+};
+
+export type TrainPlan = {
+  dataDir: string;
+  trainFile: string;
+  validFile: string;
+  model: string;
+  adapterPath: string;
+  command: string;
+  examples: number;
+};
+
+export function prepareTrain(options: TrainOptions = {}): TrainPlan {
+  const repoRoot = resolveRepoRoot(options.repoPath);
+  const headSha = getHeadSha(repoRoot);
+
+  // Default output dir inside repo
+  const outDir = options.outPath
+    ? path.resolve(options.outPath)
+    : path.join(repoRoot, '.repo-arch', 'training-data');
+
+  // Generate dataset
+  const dataset = generateDataset({ repoPath: options.repoPath });
+  const examples = dataset.examples;
+
+  if (examples.length === 0) {
+    throw new Error('No training examples generated. Use repo-arch accept on some cards first.');
+  }
+
+  // Shuffle and split 90/10
+  const shuffled = [...examples].sort(() => Math.random() - 0.5);
+  const splitIdx = Math.max(1, Math.floor(shuffled.length * 0.9));
+  const train = shuffled.slice(0, splitIdx);
+  const valid = shuffled.slice(splitIdx);
+
+  // Write train.jsonl and valid.jsonl (OpenAI chat format)
+  fs.mkdirSync(outDir, { recursive: true });
+
+  const trainFile = path.join(outDir, 'train.jsonl');
+  const validFile = path.join(outDir, 'valid.jsonl');
+
+  fs.writeFileSync(trainFile, train.map(ex => JSON.stringify({ messages: ex.messages })).join('\n') + '\n');
+  fs.writeFileSync(validFile, valid.map(ex => JSON.stringify({ messages: ex.messages })).join('\n') + '\n');
+
+  // Build mlx_lm.lora command
+  const model = options.model ?? 'Qwen/Qwen2.5-Coder-1.5B-Instruct';
+  const adapterName = options.adapterName ?? `repo-arch-${headSha.slice(0, 7)}`;
+  const adapterPath = path.join(repoRoot, '.repo-arch', 'adapters', adapterName);
+  const iters = options.iters ?? 100;
+  const learningRate = options.learningRate ?? 1e-5;
+
+  const command = [
+    'mlx_lm.lora',
+    '--train',
+    `--model ${model}`,
+    `--data ${outDir}`,
+    `--adapter-path ${adapterPath}`,
+    `--num-layers 4`,
+    `--batch-size 4`,
+    `--iters ${iters}`,
+    `--val-batches 10`,
+    `--learning-rate ${learningRate}`,
+    `--steps-per-report 10`,
+    `--steps-per-eval 10`,
+  ].join(' \\\n  ');
+
+  return {
+    dataDir: outDir,
+    trainFile,
+    validFile,
+    model,
+    adapterPath,
+    command,
+    examples: examples.length,
+  };
+}
+
+export function formatTrain(plan: TrainPlan): string {
+  const lines: string[] = [];
+  lines.push(`\n  Training data prepared at ${plan.dataDir}`);
+  lines.push(`  ${plan.examples} examples (train + valid)`);
+  lines.push(`  Model: ${plan.model}`);
+  lines.push(`  Adapter: ${plan.adapterPath}\n`);
+  lines.push(`  To train, run:\n`);
+  lines.push(`  ${plan.command.replace(/\\n/g, '\n')}`);
+  lines.push('');
+  return lines.join('\n');
+}

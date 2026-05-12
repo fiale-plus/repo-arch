@@ -14,15 +14,18 @@ import { checkStaleness, formatStaleness } from './staleness.js';
 import { similar } from './similar.js';
 import { buildIndex, loadIndex } from './embedder.js';
 import { runEval, formatEval } from './eval.js';
-import { generateDataset, formatDataset } from './training.js';
+import { generateDataset, formatDataset, prepareTrain, formatTrain } from './training.js';
 
 export type ParsedArgs = {
   help?: boolean;
   json?: boolean;
+  run?: boolean;
   repo?: string;
   out?: string;
   base?: string;
   head?: string;
+  model?: string;
+  iters?: number;
   minConfidence?: number;
   maxCards?: number;
   noCache?: boolean;
@@ -50,6 +53,7 @@ Usage:
   repo-arch similar <query> [--repo <path>] [--json]
   repo-arch eval [--repo <path>] [--json]
   repo-arch dataset [--repo <path>] [--out <file>] [--json]
+  repo-arch train [--repo <path>] [--out <dir>] [--model <name>] [--iters <n>] [--run]
 
 Options:
   --repo   Path to a git repository (default: current directory)
@@ -100,6 +104,18 @@ export function parseArgs(argv: string[]): ParsedArgs {
     }
     if (token === '--json') {
       args.json = true;
+      continue;
+    }
+    if (token === '--run') {
+      args.run = true;
+      continue;
+    }
+    if (token === '--model') {
+      args.model = argv[++i];
+      continue;
+    }
+    if (token === '--iters') {
+      args.iters = parseInt(argv[++i], 10);
       continue;
     }
     args._.push(token);
@@ -322,6 +338,34 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<{ ok
       process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     } else if (!args.out) {
       process.stdout.write(formatDataset(result));
+    }
+    return { ok: true };
+  }
+
+  if (command === 'train') {
+    try {
+      const plan = prepareTrain({
+        repoPath: args.repo,
+        outPath: args.out,
+        model: args.model,
+        iters: args.iters,
+        run: args.run,
+      });
+      process.stdout.write(formatTrain(plan));
+      if (args.run) {
+        const { execSync } = await import('node:child_process');
+        process.stderr.write(`Running training...\n`);
+        try {
+          const cmd = plan.command.replace(/\\\n  /g, ' ');
+          execSync(cmd, { stdio: 'inherit', cwd: resolveRepoRoot(args.repo) });
+        } catch (e) {
+          process.stderr.write(`Training failed. Install mlx-lm: pip install mlx-lm\n`);
+          process.exitCode = 1;
+        }
+      }
+    } catch (e) {
+      process.stderr.write(`${e instanceof Error ? e.message : String(e)}\n`);
+      process.exitCode = 1;
     }
     return { ok: true };
   }
