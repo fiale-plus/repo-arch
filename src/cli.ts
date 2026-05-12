@@ -5,11 +5,14 @@ import { mineHistory } from './git-history.js';
 import { classifyHistory } from './signals.js';
 import { generateCards, CARD_GENERATORS } from './cards.js';
 import { why, formatWhy } from './why.js';
+import { checkDiff, formatCheckDiff } from './check-diff.js';
 
 export type ParsedArgs = {
   help?: boolean;
   repo?: string;
   out?: string;
+  base?: string;
+  head?: string;
   minConfidence?: number;
   maxCards?: number;
   _: string[];
@@ -24,6 +27,7 @@ Usage:
   repo-arch classify [--repo <path>] [--out <file>]
   repo-arch cards [--repo <path>] [--out <file>] [--min-confidence <float>] [--max-cards <number>]
   repo-arch why <file-path> [--repo <path>]
+  repo-arch check-diff [--repo <path>] [--base <ref>] [--head <ref>]
 
 Options:
   --repo   Path to a git repository (default: current directory)
@@ -54,6 +58,14 @@ export function parseArgs(argv: string[]): ParsedArgs {
     }
     if (token === '--max-cards') {
       args.maxCards = parseInt(argv[++i], 10);
+      continue;
+    }
+    if (token === '--base') {
+      args.base = argv[++i];
+      continue;
+    }
+    if (token === '--head') {
+      args.head = argv[++i];
       continue;
     }
     args._.push(token);
@@ -132,6 +144,18 @@ export function main(argv: string[] = process.argv.slice(2)): { ok: boolean; hel
     } else {
       fs.writeFileSync(path.resolve(args.out), output, 'utf8');
       process.stderr.write(`wrote explanation to ${path.resolve(args.out)}\n`);
+    }
+    return { ok: true };
+  }
+
+  if (command === 'check-diff' || command === 'diff') {
+    const result = checkDiff({ repoPath: args.repo, base: args.base, head: args.head });
+    const output = formatCheckDiff(result);
+    if (!args.out) {
+      process.stdout.write(output);
+    } else {
+      fs.writeFileSync(path.resolve(args.out), output, 'utf8');
+      process.stderr.write(`wrote diff check to ${path.resolve(args.out)}\n`);
     }
     return { ok: true };
   }
