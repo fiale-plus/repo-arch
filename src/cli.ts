@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { mineHistory } from './git-history.js';
 import { classifyHistory } from './signals.js';
 import { generateCards, CARD_GENERATORS } from './cards.js';
+import { why, formatWhy } from './why.js';
 
 export type ParsedArgs = {
   help?: boolean;
@@ -22,6 +23,7 @@ Usage:
   repo-arch mine [--repo <path>] [--out <file>]
   repo-arch classify [--repo <path>] [--out <file>]
   repo-arch cards [--repo <path>] [--out <file>] [--min-confidence <float>] [--max-cards <number>]
+  repo-arch why <file-path> [--repo <path>]
 
 Options:
   --repo   Path to a git repository (default: current directory)
@@ -112,6 +114,24 @@ export function main(argv: string[] = process.argv.slice(2)): { ok: boolean; hel
     } else {
       fs.writeFileSync(path.resolve(args.out), jsonl, 'utf8');
       process.stderr.write(`wrote ${cards.length} cards to ${path.resolve(args.out)}\n`);
+    }
+    return { ok: true };
+  }
+
+  if (command === 'why') {
+    const filePath = args._[1];
+    if (!filePath) {
+      process.stderr.write(`Error: missing file path\n\nUsage: repo-arch why <file-path> [--repo <path>]\n`);
+      process.exitCode = 1;
+      return { ok: false, error: 'Missing file path' };
+    }
+    const result = why(filePath, { repoPath: args.repo });
+    const output = formatWhy(result);
+    if (!args.out) {
+      process.stdout.write(output);
+    } else {
+      fs.writeFileSync(path.resolve(args.out), output, 'utf8');
+      process.stderr.write(`wrote explanation to ${path.resolve(args.out)}\n`);
     }
     return { ok: true };
   }
