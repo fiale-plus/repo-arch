@@ -13,6 +13,7 @@ import { whyContextPack, diffContextPack, cardsContextPack } from './context-pac
 import { checkStaleness, formatStaleness } from './staleness.js';
 import { similar } from './similar.js';
 import { buildIndex, loadIndex } from './embedder.js';
+import { runEval, formatEval } from './eval.js';
 
 export type ParsedArgs = {
   help?: boolean;
@@ -46,6 +47,7 @@ Usage:
   repo-arch check-stale [--repo <path>] [--json]
   repo-arch index [--repo <path>]
   repo-arch similar <query> [--repo <path>] [--json]
+  repo-arch eval [--repo <path>] [--json]
 
 Options:
   --repo   Path to a git repository (default: current directory)
@@ -298,6 +300,16 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<{ ok
         process.stdout.write(`  ${r.score.toFixed(3)}  ${r.text.slice(0, 100)}...\n`);
         process.stdout.write(`        [${r.id.slice(0, 10)}] ${r.metadata.type}\n\n`);
       }
+    }
+    return { ok: true };
+  }
+
+  if (command === 'eval' || command === 'benchmark') {
+    const report = await runEval({ repoPath: args.repo });
+    if (args.json) {
+      process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+    } else {
+      process.stdout.write(formatEval(report));
     }
     return { ok: true };
   }
