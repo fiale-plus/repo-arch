@@ -1,6 +1,8 @@
 #!/usr/bin/env tsx
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { mineHistory } from './git-history.js';
+import { classifyHistory } from './signals.js';
 
 export type ParsedArgs = {
   help?: boolean;
@@ -15,6 +17,7 @@ export function usage(): string {
 Usage:
   repo-arch mine-history [--repo <path>] [--out <file>]
   repo-arch mine [--repo <path>] [--out <file>]
+  repo-arch classify [--repo <path>] [--out <file>]
 
 Options:
   --repo   Path to a git repository (default: current directory)
@@ -59,6 +62,19 @@ export function main(argv: string[] = process.argv.slice(2)): { ok: boolean; hel
       process.stdout.write(result.jsonl);
     } else {
       process.stderr.write(`wrote ${result.count} commits to ${path.resolve(args.out)}${result.cacheHit ? ' (cache hit)' : ''}\n`);
+    }
+    return { ok: true };
+  }
+
+  if (command === 'classify' || command === 'signals') {
+    const history = mineHistory({ repoPath: args.repo });
+    const classified = classifyHistory(history.records);
+    const jsonl = classified.map(c => JSON.stringify(c)).join('\n') + (classified.length ? '\n' : '');
+    if (!args.out) {
+      process.stdout.write(jsonl);
+    } else {
+      fs.writeFileSync(args.out, jsonl, 'utf8');
+      process.stderr.write(`wrote ${classified.length} classified commits to ${path.resolve(args.out)}\n`);
     }
     return { ok: true };
   }
