@@ -23,22 +23,26 @@ Cards are designed to be inspectable by humans, linked to evidence, stored local
 
 ## Current MVP
 
-The first implementation slice is local git-history mining, implemented in TypeScript from day one:
+The current implementation is local git-history archaeology, implemented in TypeScript from day one:
 
 ```bash
 repo-arch mine-history --repo . --out history.jsonl
+repo-arch classify --repo . --out classified.jsonl
+repo-arch cards --repo .
+repo-arch why src/core.ts
+repo-arch check-diff --repo . --base main --head HEAD
 ```
 
-It extracts commit SHA, parents, author, timestamp, subject, and changed files into stable JSONL, with a small cache keyed by repo path + HEAD.
+It extracts commit history, classifies commit signals, generates insight cards, explains file history, and warns on diffs using historical patterns. Raw history and generated cards are cached under `.repo-arch/cache/`.
+
+## Project docs
+
+- [PRD.md](./PRD.md) — full product requirements and long-term thesis.
+- [EMBEDDINGS_APPENDIX.md](./EMBEDDINGS_APPENDIX.md) — embedding strategy, retrieval layers, model/storage guidance, and why embeddings should enter after the structured-card loop is useful.
+- [ROADMAP.md](./ROADMAP.md) — current implementation status and phased plan.
+- [AGENTS.md](./AGENTS.md) — autoload instructions for coding agents working on the project.
 
 ## Intended product surface
-
-MVP CLI shape:
-
-```bash
-repo-arch mine-history --repo <path> --out <file>
-repo-arch mine
-```
 
 Planned agent interface:
 
@@ -56,7 +60,7 @@ Repo-Arch is intended for sensitive engineering history. Raw Slack/Jira exports,
 
 ## Status
 
-This repository currently contains the initial PRD and the first git-history mining slice. See [PRD.md](./PRD.md) for the full product requirements document.
+Repo-Arch currently has a working local-only loop from git history mining to diff warnings. See [ROADMAP.md](./ROADMAP.md) for the active phase plan and [PRD.md](./PRD.md) for the full product requirements document.
 
 ## License
 
