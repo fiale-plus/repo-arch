@@ -14,6 +14,7 @@ import { checkStaleness, formatStaleness } from './staleness.js';
 import { similar } from './similar.js';
 import { buildIndex, loadIndex } from './embedder.js';
 import { runEval, formatEval } from './eval.js';
+import { generateDataset, formatDataset } from './training.js';
 
 export type ParsedArgs = {
   help?: boolean;
@@ -48,6 +49,7 @@ Usage:
   repo-arch index [--repo <path>]
   repo-arch similar <query> [--repo <path>] [--json]
   repo-arch eval [--repo <path>] [--json]
+  repo-arch dataset [--repo <path>] [--out <file>] [--json]
 
 Options:
   --repo   Path to a git repository (default: current directory)
@@ -310,6 +312,16 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<{ ok
       process.stdout.write(JSON.stringify(report, null, 2) + '\n');
     } else {
       process.stdout.write(formatEval(report));
+    }
+    return { ok: true };
+  }
+
+  if (command === 'dataset' || command === 'train-data') {
+    const result = generateDataset({ repoPath: args.repo, outPath: args.out });
+    if (args.json) {
+      process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    } else if (!args.out) {
+      process.stdout.write(formatDataset(result));
     }
     return { ok: true };
   }
