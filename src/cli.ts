@@ -33,33 +33,201 @@ export type ParsedArgs = {
   _: string[];
 };
 
-export function usage(): string {
-  return `repo-arch
+export function helpFor(command: string): string | null {
+  const cmds: Record<string, string> = {
+    'mine-history': `repo-arch mine-history --repo <path>
 
-Usage:
-  repo-arch mine-history [--repo <path>] [--out <file>]
-  repo-arch mine [--repo <path>] [--out <file>]
-  repo-arch classify [--repo <path>] [--out <file>]
-  repo-arch cards [--repo <path>] [--out <file>] [--min-confidence <float>] [--max-cards <number>]
-  repo-arch why <file-path> [--repo <path>] [--json]
-  repo-arch check-diff [--repo <path>] [--base <ref>] [--head <ref>] [--json]
-  repo-arch accept <card-id> [--repo <path>]
-  repo-arch reject <card-id> [--repo <path>]
-  repo-arch review list [--repo <path>]
-  repo-arch cards --invalidate
-  repo-arch invalidate-cache [--repo <path>]
-  repo-arch check-stale [--repo <path>] [--json]
-  repo-arch index [--repo <path>]
-  repo-arch similar <query> [--repo <path>] [--json]
-  repo-arch eval [--repo <path>] [--json]
-  repo-arch dataset [--repo <path>] [--out <file>] [--json]
-  repo-arch train [--repo <path>] [--out <dir>] [--model <name>] [--iters <n>] [--run]
+  Mine all git history from a repository and cache it locally.
 
-Options:
-  --repo   Path to a git repository (default: current directory)
-  --out    Write output to a file instead of stdout
-  --help   Show help
+  Example:
+    repo-arch mine-history --repo . --out history.jsonl
+
+  Next: repo-arch classify`,
+    'classify': `repo-arch classify --repo <path>
+
+  Classify commit signals (fix, revert, docs, test, etc.) against known patterns.
+
+  Example:
+    repo-arch classify --repo .
+
+  Next: repo-arch cards`,
+    'cards': `repo-arch cards --repo <path> [--invalidate] [--min-confidence <n>] [--max-cards <n>]
+
+  Generate insight cards from classified history. Cards are cached by HEAD.
+
+  Examples:
+    repo-arch cards --repo .
+    repo-arch cards --invalidate --repo .
+
+  Next: repo-arch review list`,
+    'accept': `repo-arch accept <card-id> --repo <path>
+
+  Mark a card as accepted. Accepted cards are used in eval and training.
+
+  Example:
+    repo-arch accept abc123def456 --repo .
+
+  Next: repo-arch eval`,
+    'reject': `repo-arch reject <card-id> --repo <path>
+
+  Mark a card as rejected (noisy / not useful).
+
+  Example:
+    repo-arch reject abc123def456 --repo .`,
+    'review': `repo-arch review list --repo <path>
+
+  Show all accepted/rejected card statuses.
+
+  Example:
+    repo-arch review list --repo .
+
+  Next: repo-arch eval`,
+    'why': `repo-arch why <file-path> --repo <path> [--json]
+
+  Explain a file's history: fix count, signals, co-change partners.
+
+  Example:
+    repo-arch why src/core.ts --json`,
+    'check-diff': `repo-arch check-diff --repo <path> [--base <ref>] [--head <ref>] [--json]
+
+  Check a diff for regression warnings based on card history.
+
+  Example:
+    repo-arch check-diff --base main --json`,
+    'check-stale': `repo-arch check-stale --repo <path> [--json]
+
+  Check whether existing cards are still accurate (files may have moved or been deleted).`,
+    'index': `repo-arch index --repo <path>
+
+  Build an embedding index from cards for similarity search.
+
+  Example:
+    repo-arch index --repo .`,
+    'similar': `repo-arch similar <query> --repo <path> [--json]
+
+  Search past cards by semantic similarity.
+
+  Example:
+    repo-arch similar "why auth middleware token-only?" --json`,
+    'eval': `repo-arch eval --repo <path> [--json]
+
+  Run retrieval benchmarks against accepted cards.
+
+  Requires: at least one accepted card`,
+    'dataset': `repo-arch dataset --repo <path> [--out <file>] [--json]
+
+  Generate training dataset from accepted cards.
+
+  Example:
+    repo-arch dataset --repo .`,
+    'train': `repo-arch train --repo <path> [--out <dir>] [--model <name>] [--iters <n>] [--run]
+
+  Prepare and optionally run mlx-lm LoRA training.
+
+  Example:
+    repo-arch train --repo . --run`,
+  };
+  const aliases: Record<string, string> = {
+    'mine': 'mine-history',
+    'signals': 'classify',
+    'diff': 'check-diff',
+    'stale': 'check-stale',
+    'invalidate-cache': '',
+    'benchmark': 'eval',
+    'train-data': 'dataset',
+    'tutorial': '',
+  };
+  const resolved = aliases[command] ?? command;
+  if (resolved === '') return null;
+  return cmds[resolved] ?? null;
+}
+
+export function tutorial(): string {
+  return `repo-arch tutorial — Guided onboarding
+
+  repo-arch turns git history into cards, warnings, and training data.
+
+  ┌─ 1.  mine-history  ─────────────────────────────────────┐
+  │  Scan all commits and cache them locally.                │
+  │  repo-arch mine-history --repo .                         │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─ 2.  classify  ─────────────────────────────────────────┐
+  │  Tag commits with signal types (fix, docs, test, etc).   │
+  │  repo-arch classify --repo .                             │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─ 3.  cards  ────────────────────────────────────────────┐
+  │  Generate insight cards from classified commits.         │
+  │  repo-arch cards --repo .                                │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─ 4.  review / accept / reject  ─────────────────────────┐
+  │  Curate which cards are useful. Accepted cards feed      │
+  │  eval benchmarks and training datasets.                  │
+  │  repo-arch review list --repo .                          │
+  │  repo-arch accept <card-id> --repo .                     │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─ 5.  eval  ─────────────────────────────────────────────┐
+  │  Measure how well cards survive keyword and embedding    │
+  │  retrieval.                                              │
+  │  repo-arch eval --repo .                                 │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─ 6.  dataset + train  ──────────────────────────────────┐
+  │  Export training examples and run LoRA fine-tuning.      │
+  │  repo-arch dataset --repo .                              │
+  │  repo-arch train --repo . --run                          │
+  └─────────────────────────────────────────────────────────┘
+
+  Additional tools:
+    why <file>       — explain a file's history
+    check-diff       — warn about regression risks in a diff
+    check-stale      — detect cards pointing to removed files
+    index + similar  — semantic search over past cards
 `;
+}
+
+export function usage(): string {
+  const workflow = `repo-arch — project-memory engine for git history
+
+Recommended workflow:
+  1. repo-arch mine-history  — scan all git history
+  2. repo-arch classify      — tag commits with signal types
+  3. repo-arch cards         — generate insight cards
+  4. repo-arch review list   — review card quality
+  5. repo-arch accept|reject — curate cards (affects eval/training)
+  6. repo-arch eval          — run retrieval benchmarks
+  7. repo-arch dataset       — export training examples
+  8. repo-arch train         — run LoRA fine-tuning
+
+Commands:
+  mine-history    Scan and cache all git history
+  classify        Tag commits with signal types (fix, docs, etc.)
+  cards           Generate insight cards from classified commits
+  why <file>      Explain a file\'s commit history
+  check-diff      Check a diff for regression warnings
+  check-stale     Detect stale cards (pointing to missing files)
+  index           Build embedding index for similar search
+  similar <query> Semantic similarity search over cards
+  accept|reject   Curate card quality
+  review list     Show accepted/rejected card statuses
+  eval            Benchmark card retrieval
+  dataset         Export training examples from accepted cards
+  train           Prepare and run LoRA fine-tuning
+
+Global options:
+  --repo <path>   Path to a git repository (default: current directory)
+  --out <file>    Write output to a file
+  --json          Output structured JSON
+  --help          Show help
+
+Learn more:
+  repo-arch <command> --help   — command-specific help
+  repo-arch tutorial            — guided onboarding walkthrough
+`;
+  return workflow;
 }
 
 export function parseArgs(argv: string[]): ParsedArgs {
@@ -128,6 +296,30 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<{ ok
   const command = args._[0];
 
   if (args.help || !command) {
+    // Show top-level help if no command, or per-command help if --help with a command
+    if (!command) {
+      process.stdout.write(usage());
+      return { ok: true, help: true };
+    }
+    if (helpFor(command)) {
+      process.stdout.write(helpFor(command) + '\n');
+      return { ok: true, help: true };
+    }
+    process.stdout.write('Unknown command: ' + command + '\n\n' + usage());
+    return { ok: true, help: true };
+  }
+
+  if (command === 'tutorial') {
+    process.stdout.write(tutorial());
+    return { ok: true };
+  }
+
+  if (command === 'help') {
+    const sub = args._[1];
+    if (sub && helpFor(sub)) {
+      process.stdout.write(helpFor(sub) + '\n');
+      return { ok: true };
+    }
     process.stdout.write(usage());
     return { ok: true, help: true };
   }
