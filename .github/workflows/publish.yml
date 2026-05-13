@@ -26,6 +26,12 @@ jobs:
       - run: npm run build
       - run: npm test
 
+      - name: Sync version from git tag
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          npm version "$TAG_VERSION" --no-git-tag-version --allow-same-version
+          echo "Synced package.json version to $TAG_VERSION"
+
       - name: Publish
         run: npm publish --provenance --access public
         env:
@@ -35,4 +41,5 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           sleep 10
-          npm view @fiale-plus/repo-arch@"$VERSION"
+          npm view @fiale-plus/repo-arch@"$VERSION" version
+          echo "Published $VERSION verified"
