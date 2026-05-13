@@ -23,11 +23,6 @@ jobs:
 
       - run: npm ci
 
-      - name: Set version from tag
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          npm version "$VERSION" --no-git-tag-version
-
       - run: npm run build
       - run: npm test
 
