@@ -1,5 +1,5 @@
 {
-  "name": "repo-arch",
+  "name": "@fiale-plus/repo-arch",
   "version": "0.1.0",
   "description": "Project archaeology and repo memory tooling — CLI-first project-memory engine",
   "type": "module",
@@ -11,6 +11,9 @@
     "README.md",
     "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/cli.ts",

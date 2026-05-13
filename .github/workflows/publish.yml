@@ -35,4 +35,4 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           sleep 10
-          npm view repo-arch@"$VERSION"
+          npm view @fiale-plus/repo-arch@"$VERSION"
