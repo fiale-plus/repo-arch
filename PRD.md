@@ -17,7 +17,6 @@ git history -> signals -> cards -> explanations -> warnings -> retrieval -> eval
 
 ## What it is not
 
-- adapter-first
 - a generic chatbot
 - a cloud service
 - a replacement for the codebase itself

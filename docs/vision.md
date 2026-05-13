@@ -16,7 +16,6 @@ Repo-Arch already covers history mining, signal classification, cards, `why`, di
 
 ## Not the focus
 
-- not adapter-first
 - not a generic chat UI
 - not a cloud-hosted product by default
 
