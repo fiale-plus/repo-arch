@@ -3,13 +3,11 @@
 Read this first:
 
 - README.md
-- PRD.md
-- ROADMAP.md
 
 Load on demand only when the task needs it:
 
-- docs/vision.md — architecture and product direction
 - docs/usage.md — CLI usage and stable output
+- docs/vision.md — architecture and product direction
 - docs/release-flow.md — release process
 - docs/roadmap.md — current status and next work
 - docs/embeddings.md — retrieval and training notes
