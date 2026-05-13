@@ -64,11 +64,18 @@ function churnHotspotCards(records: ClassifiedCommit[]): Omit<InsightCard, 'id' 
     }
   }
 
-  const sorted = [...fileCount.entries()].sort((a, b) => b[1] - a[1]);
-  const threshold = Math.max(2, Math.round(records.length * 0.08));
-  const hotspots = sorted.filter(([, count]) => count >= threshold).slice(0, 5);
+  const candidates = [...fileCount.entries()]
+    .map(([file, count]) => ({
+      file,
+      count,
+      bucket: isSourcePath(file) ? 'source' : isConfigPath(file) ? 'config' : 'other' as CardBucket,
+    }))
+    .filter(candidate => candidate.count >= Math.max(2, Math.round(records.length * (candidate.bucket === 'source' ? 0.03 : 0.08))))
+    .sort((a, b) => b.count - a.count);
 
-  return hotspots.map(([file, count]) => ({
+  const hotspots = selectByBucket(candidates, { source: 3, config: 1, other: 1 }, 5);
+
+  return hotspots.map(({ file, count }) => ({
     type: 'churn-hotspot',
     title: `High-churn file: ${file}`,
     confidence: Math.min(0.9, parseFloat((0.4 + (count / records.length) * 0.5).toFixed(2))),
@@ -82,16 +89,27 @@ function churnHotspotCards(records: ClassifiedCommit[]): Omit<InsightCard, 'id' 
   }));
 }
 
+function isChangelog(filePath: string): boolean {
+  const name = filePath.split('/').pop() ?? '';
+  return /^CHANGELOG/i.test(name);
+}
+
+function isLockFile(filePath: string): boolean {
+  return /package-lock\.json$/.test(filePath);
+}
+
 function repeatedFixCards(records: ClassifiedCommit[]): Omit<InsightCard, 'id' | 'status'>[] {
   const fixRecords = records.filter(r => r.signals.some(s => s.type === 'fix'));
-  const fileCount = new Map<string, { count: number; commits: ClassifiedCommit[] }>();
+  const fileCount = new Map<string, { count: number; commits: ClassifiedCommit[]; bucket: CardBucket }>();
 
   for (const record of fixRecords) {
     const seen = new Set<string>();
     for (const file of record.files) {
       if (!seen.has(file.path)) {
+        if (isChangelog(file.path)) continue;
         seen.add(file.path);
-        const entry = fileCount.get(file.path) ?? { count: 0, commits: [] };
+        const bucket: CardBucket = isSourcePath(file.path) ? 'source' : isConfigPath(file.path) ? 'config' : 'other';
+        const entry = fileCount.get(file.path) ?? { count: 0, commits: [], bucket };
         entry.count += 1;
         entry.commits.push(record);
         fileCount.set(file.path, entry);
@@ -99,17 +117,21 @@ function repeatedFixCards(records: ClassifiedCommit[]): Omit<InsightCard, 'id' |
     }
   }
 
-  return [...fileCount.entries()]
+  const entries = [...fileCount.entries()]
     .filter(([, entry]) => entry.count >= 2)
-    .slice(0, 5)
-    .map(([file, entry]) => ({
-      type: 'repeated-fix',
-      title: `Repeated fixes in: ${file}`,
-      confidence: Math.min(0.95, parseFloat((0.5 + (entry.count - 1) * 0.1).toFixed(2))),
-      supportingCommits: entry.commits.slice(0, 5).map(r => ({ sha: r.sha, subject: r.subject })),
-      affectedFiles: [file],
-      suggestion: `This file was fixed ${entry.count} times. Consider adding regression tests or a deeper refactor to address root cause.`,
-    }));
+    .map(([file, entry]) => ({ file, ...entry }))
+    .sort((a, b) => b.count - a.count);
+
+  const selected = selectByBucket(entries, { source: 3, config: 2, other: 0 }, 5);
+
+  return selected.map(({ file, count, commits }) => ({
+    type: 'repeated-fix',
+    title: `Repeated fixes in: ${file}`,
+    confidence: Math.min(0.95, parseFloat((0.5 + (count - 1) * 0.1).toFixed(2))),
+    supportingCommits: commits.slice(0, 5).map(r => ({ sha: r.sha, subject: r.subject })),
+    affectedFiles: [file],
+    suggestion: `This file was fixed ${count} times. Consider adding regression tests or a deeper refactor to address root cause.`,
+  }));
 }
 
 function rationaleClusterCards(records: ClassifiedCommit[]): Omit<InsightCard, 'id' | 'status'>[] {
@@ -148,24 +170,30 @@ function rationaleClusterCards(records: ClassifiedCommit[]): Omit<InsightCard, '
 function testGapCards(records: ClassifiedCommit[]): Omit<InsightCard, 'id' | 'status'>[] {
   const isTestPath = (p: string) => /\.(test|spec)\./.test(p) || /__tests__\//.test(p) || /\/test\//.test(p);
 
-  const sourceFiles = new Map<string, number>();
+  const sourceFiles = new Map<string, { count: number; bucket: CardBucket }>();
   for (const record of records) {
     const hasTest = record.files.some(f => isTestPath(f.path));
     if (!hasTest) {
       for (const file of record.files) {
         if (!isTestPath(file.path) && !file.path.startsWith('.')) {
-          sourceFiles.set(file.path, (sourceFiles.get(file.path) ?? 0) + 1);
+          if (isChangelog(file.path) || isLockFile(file.path)) continue;
+          const bucket: CardBucket = isSourcePath(file.path) ? 'source' : isConfigPath(file.path) ? 'config' : 'other';
+          const entry = sourceFiles.get(file.path) ?? { count: 0, bucket };
+          entry.count += 1;
+          sourceFiles.set(file.path, entry);
         }
       }
     }
   }
 
   const filtered = [...sourceFiles.entries()]
-    .filter(([, count]) => count >= Math.ceil(records.length * 0.05))
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 4);
+    .filter(([, entry]) => entry.count >= Math.ceil(records.length * 0.05))
+    .map(([file, entry]) => ({ file, ...entry }))
+    .sort((a, b) => b.count - a.count);
 
-  return filtered.map(([file, count]) => ({
+  const selected = selectByBucket(filtered, { source: 3, config: 1, other: 0 }, 4);
+
+  return selected.map(({ file, count }) => ({
     type: 'test-gap',
     title: `Possible test gap: ${file}`,
     confidence: Math.min(0.7, parseFloat((0.4 + count * 0.03).toFixed(2))),
@@ -226,24 +254,82 @@ function coChangeCards(records: ClassifiedCommit[]): Omit<InsightCard, 'id' | 's
     }
   }
 
-  return [...pairCount.entries()]
+  const pairs = [...pairCount.entries()]
     .filter(([, count]) => count >= 2)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
     .map(([pairKey, count]) => {
       const [a, b] = pairKey.split(' <-> ');
-      return {
-        type: 'co-change',
-        title: `Co-change cluster: ${a}, ${b}`,
-        confidence: parseFloat((0.3 + count * 0.05).toFixed(2)),
-        supportingCommits: (pairCommits.get(pairKey) ?? []).slice(0, 5).map(r => ({ sha: r.sha, subject: r.subject })),
-        affectedFiles: [a, b],
-        suggestion: `These files changed together in ${count} commits. Consider whether they should be colocated, refactored, or have shared tests.`,
-      };
-    });
+      const bucket: CardBucket = isSourcePath(a) || isSourcePath(b) ? 'source' : isConfigPath(a) || isConfigPath(b) ? 'config' : 'other';
+      return { pairKey, count, a, b, bucket, commits: pairCommits.get(pairKey) ?? [] };
+    })
+    .sort((a, b) => b.count - a.count);
+
+  const selected = selectByBucket(pairs, { source: 3, config: 2, other: 0 }, 5);
+
+  return selected.map(({ pairKey, count, a, b, commits }) => ({
+    type: 'co-change',
+    title: `Co-change cluster: ${a}, ${b}`,
+    confidence: parseFloat((0.3 + count * 0.05).toFixed(2)),
+    supportingCommits: commits.slice(0, 5).map(r => ({ sha: r.sha, subject: r.subject })),
+    affectedFiles: [a, b],
+    suggestion: `These files changed together in ${count} commits. Consider whether they should be colocated, refactored, or have shared tests.`,
+  }));
 }
 
-// ─── Registry ──────────────────────────────────────────────
+type CardBucket = 'source' | 'config' | 'rationale' | 'other';
+
+type ScoredCard = Omit<InsightCard, 'id' | 'status'> & { key: string; bucket: CardBucket };
+
+function isSourcePath(filePath: string): boolean {
+  return /\.(?:d\.)?(?:ts|tsx|js|jsx|mjs|cjs|mts|cts|go|rs|py|java|kt|swift|rb|c|cc|cpp|cxx|h|hpp|hh|cs|m|mm|sh)$/i.test(filePath);
+}
+
+function isConfigPath(filePath: string): boolean {
+  return /(^|\/)(package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|CHANGELOG(?:\.[^.]+)?|README(?:\.[^.]+)?|Dockerfile|Makefile|tsconfig(?:\.[^.]+)?\.json|eslint\.config\.[cm]?js|\.gitignore|\.npmrc|\.env(?:\.[^.]+)?)$/i.test(filePath)
+    || /\.(?:json|ya?ml|toml|ini)$/i.test(filePath);
+}
+
+function classifyCardBucket(card: Omit<InsightCard, 'id' | 'status'>): CardBucket {
+  if (card.type === 'rationale-cluster') return 'rationale';
+  const files = card.affectedFiles ?? [];
+  if (files.some(isSourcePath)) return 'source';
+  if (files.some(isConfigPath)) return 'config';
+  return 'other';
+}
+
+function selectByBucket<T extends { bucket: CardBucket }>(
+  items: T[],
+  quotas: Partial<Record<CardBucket, number>>,
+  maxCount: number,
+): T[] {
+  const selected: T[] = [];
+  const selectedSet = new Set<T>();
+  const order: CardBucket[] = ['source', 'config', 'rationale', 'other'];
+
+  for (const bucket of order) {
+    let quota = quotas[bucket] ?? 0;
+    if (quota <= 0) continue;
+    for (const item of items) {
+      if (selected.length >= maxCount || quota <= 0) break;
+      if (item.bucket !== bucket || selectedSet.has(item)) continue;
+      selected.push(item);
+      selectedSet.add(item);
+      quota -= 1;
+    }
+  }
+
+  for (const item of items) {
+    if (selected.length >= maxCount) break;
+    if (selectedSet.has(item)) continue;
+    selected.push(item);
+    selectedSet.add(item);
+  }
+
+  return selected.slice(0, maxCount);
+}
+
+function sortDesc(a: ScoredCard, b: ScoredCard): number {
+  return b.confidence - a.confidence;
+}
 
 export const CARD_GENERATORS: Array<{
   type: CardType;
@@ -268,15 +354,64 @@ export function generateCards(
   const minConfidence = options.minConfidence ?? 0.3;
   const maxCards = options.maxCards ?? 20;
 
-  const allCards: Omit<InsightCard, 'id' | 'status'>[] = [];
+  const allCards: ScoredCard[] = [];
   for (const generator of CARD_GENERATORS) {
     const cards = generator.run(classifiedRecords);
-    allCards.push(...cards);
+    for (const card of cards) {
+      allCards.push({
+        ...card,
+        key: cardIdFrom(card.type, card.title, card.affectedFiles),
+        bucket: classifyCardBucket(card),
+      });
+    }
   }
 
-  return allCards
+  const eligible = allCards
     .filter(card => card.confidence >= minConfidence)
-    .sort((a, b) => b.confidence - a.confidence)
+    .sort(sortDesc);
+
+  const buckets: Record<CardBucket, ScoredCard[]> = {
+    source: [],
+    config: [],
+    rationale: [],
+    other: [],
+  };
+  for (const card of eligible) {
+    buckets[card.bucket].push(card);
+  }
+
+  const selected: ScoredCard[] = [];
+  const selectedKeys = new Set<string>();
+  const pushCard = (card: ScoredCard): void => {
+    if (selected.length >= maxCards || selectedKeys.has(card.key)) return;
+    selected.push(card);
+    selectedKeys.add(card.key);
+  };
+  const take = (bucket: CardBucket, quota: number): void => {
+    for (const card of buckets[bucket]) {
+      if (selected.length >= maxCards) break;
+      if (quota <= 0) break;
+      if (selectedKeys.has(card.key)) continue;
+      pushCard(card);
+      quota -= 1;
+    }
+  };
+
+  const sourceQuota = Math.min(Math.max(1, Math.round(maxCards * 0.45)), Math.min(10, maxCards));
+  const configQuota = Math.min(Math.max(1, Math.round(maxCards * 0.25)), Math.max(0, maxCards - sourceQuota));
+  const rationaleQuota = Math.min(Math.max(0, Math.round(maxCards * 0.15)), Math.max(0, maxCards - sourceQuota - configQuota));
+
+  take('source', sourceQuota);
+  take('config', configQuota);
+  take('rationale', rationaleQuota);
+
+  for (const card of eligible) {
+    if (selected.length >= maxCards) break;
+    if (selectedKeys.has(card.key)) continue;
+    pushCard(card);
+  }
+
+  return selected
     .slice(0, maxCards)
-    .map(data => toCard(data, statusOverrides?.[cardIdFrom(data.type, data.title, data.affectedFiles)]));
+    .map(data => toCard(data, statusOverrides?.[data.key]));
 }

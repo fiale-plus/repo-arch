@@ -44,7 +44,6 @@ export const SIGNAL_DEFS: SignalDef[] = [
       /^revert[\s(:]/i,
       /this reverts/i,
       /back out/i,
-      /undo\b/i,
     ],
     baseConfidence: 1.0,
   },
@@ -127,7 +126,7 @@ export const SIGNAL_DEFS: SignalDef[] = [
       /\bdocument/i,
       /\bREADME\b/i,
     ],
-    filePatterns: [/\.md$/, /\.mdx$/, /\/docs\//, /\/wiki\//],
+    filePatterns: [/(?<!CHANGELOG)\.md$/i, /\.mdx$/, /\/docs\//, /\/wiki\//],
     baseConfidence: 0.8,
   },
   {
