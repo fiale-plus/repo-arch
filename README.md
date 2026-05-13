@@ -1,5 +1,10 @@
 # Repo-Arch
 
+[![npm version](https://img.shields.io/npm/v/repo-arch.svg)](https://www.npmjs.com/package/repo-arch)
+[![npm downloads](https://img.shields.io/npm/dm/repo-arch.svg)](https://www.npmjs.com/package/repo-arch)
+[![CI](https://github.com/fiale-plus/repo-arch/actions/workflows/ci.yml/badge.svg)](https://github.com/fiale-plus/repo-arch/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 Local project-memory engine for git history.
 
 Repo-Arch mines repository history, classifies commit signals, builds cards, explains files, warns on diffs, checks staleness, runs similarity search, prepares evals, and generates training data.
