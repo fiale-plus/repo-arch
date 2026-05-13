@@ -1,26 +1,39 @@
 {
   "name": "repo-arch",
   "version": "0.1.0",
-  "private": false,
-  "description": "Project archaeology and repo memory tooling",
+  "description": "Project archaeology and repo memory tooling — CLI-first project-memory engine",
   "type": "module",
   "bin": {
-    "repo-arch": "./src/cli.ts"
+    "repo-arch": "./dist/cli.js"
   },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
     "test": "tsx --test",
     "typecheck": "tsc --noEmit",
-    "mine-history": "tsx ./src/cli.ts mine-history"
+    "mine-history": "tsx ./src/cli.ts mine-history",
+    "prepublishOnly": "npm run build && npm test"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fiale-plus/repo-arch.git"
+  },
+  "author": "fiale-plus",
+  "license": "MIT",
   "devDependencies": {
     "@types/node": "^22.15.3",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3"
   },
-  "engines": {
-    "node": ">=20"
-  },
   "dependencies": {
     "@huggingface/transformers": "4.2.0"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
