@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { mineHistory } from './git-history.js';
 import { classifyHistory } from './signals.js';
 import { generateCards, CARD_GENERATORS } from './cards.js';
@@ -762,7 +763,17 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<{ ok
   return { ok: false, error: `Unknown command: ${command}` };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+function isMainModule(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return fs.realpathSync(path.resolve(entry)) === fs.realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return pathToFileURL(path.resolve(entry)).href === import.meta.url;
+  }
+}
+
+if (isMainModule()) {
   try {
     main();
   } catch (error) {
