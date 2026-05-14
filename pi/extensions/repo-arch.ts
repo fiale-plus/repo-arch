@@ -9,7 +9,11 @@ const COMMANDS = [
   { label: 'Inspect run', command: 'repo-arch flow inspect --repo .', hint: 'show artifacts and next steps' },
   { label: 'Review cards', command: 'repo-arch review list', hint: 'accept/reject before training' },
   { label: 'Train plan', command: 'repo-arch train prepare --repo .', hint: 'prepare LoRA training' },
-  { label: 'Train adapter', command: 'repo-arch train run --repo .', hint: 'execute LoRA training' },
+  { label: 'Train cycle', command: 'repo-arch train cycle --repo .', hint: 'continue the persistent loop' },
+  { label: 'Train resume', command: 'repo-arch train resume --repo .', hint: 'resume from latest checkpoint' },
+  { label: 'Train status', command: 'repo-arch train status --repo .', hint: 'inspect the current session' },
+  { label: 'Train list', command: 'repo-arch train list --repo .', hint: 'show all training sessions' },
+  { label: 'Train adapter', command: 'repo-arch train run --repo .', hint: 'execute one-shot LoRA training' },
   { label: 'Explain a file', command: 'repo-arch why src/core.ts --json', hint: 'history for one file' },
   { label: 'Find similar history', command: 'repo-arch similar "why auth middleware token-only?" --json', hint: 'semantic search over cards' },
 ];

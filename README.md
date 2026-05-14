@@ -33,6 +33,8 @@ repo-arch flow inspect --repo .
 repo-arch review list
 repo-arch eval
 repo-arch dataset
+repo-arch train cycle --repo .
+repo-arch train resume --repo .
 repo-arch train run --repo .
 ```
 
