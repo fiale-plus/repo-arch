@@ -85,7 +85,7 @@ function churnHotspotCards(records: ClassifiedCommit[]): Omit<InsightCard, 'id' 
       .slice(0, 5)
       .map(r => ({ sha: r.sha, subject: r.subject })),
     affectedFiles: [file],
-    suggestion: `Changed in ${count} commits. Consider whether this file needs refactoring, splitting, or a stabilization pass.`,
+    suggestion: `High-churn hotspot in ${file}: changed in ${count} commits out of ${records.length} total. This suggests ${file} is a nexus of change activity — consider whether it should be refactored into smaller modules, has accumulated technical debt, or needs a stabilization pass.`,
   }));
 }
 
@@ -130,7 +130,7 @@ function repeatedFixCards(records: ClassifiedCommit[]): Omit<InsightCard, 'id' |
     confidence: Math.min(0.95, parseFloat((0.5 + (count - 1) * 0.1).toFixed(2))),
     supportingCommits: commits.slice(0, 5).map(r => ({ sha: r.sha, subject: r.subject })),
     affectedFiles: [file],
-    suggestion: `This file was fixed ${count} times. Consider adding regression tests or a deeper refactor to address root cause.`,
+    suggestion: `Repeated bug fixes in ${file}: this file was fixed ${count} separate times (commits: ${commits.map(c => c.subject).join(', ')}). Each fix suggests the underlying cause was not fully addressed — consider deeper root-cause analysis and regression tests for the affected code paths.`,
   }));
 }
 
@@ -202,7 +202,7 @@ function testGapCards(records: ClassifiedCommit[]): Omit<InsightCard, 'id' | 'st
       .slice(0, 5)
       .map(r => ({ sha: r.sha, subject: r.subject })),
     affectedFiles: [file],
-    suggestion: `This file changed ${count} times without a corresponding test change. Review whether tests exist elsewhere or should be added.`,
+    suggestion: `Test coverage gap in ${file}: changed ${count} times without any corresponding test file modification. This means any bugs introduced in ${file} would not be caught by automated tests. Review whether tests exist elsewhere or should be added.`,
   }));
 }
 
@@ -271,7 +271,7 @@ function coChangeCards(records: ClassifiedCommit[]): Omit<InsightCard, 'id' | 's
     confidence: parseFloat((0.3 + count * 0.05).toFixed(2)),
     supportingCommits: commits.slice(0, 5).map(r => ({ sha: r.sha, subject: r.subject })),
     affectedFiles: [a, b],
-    suggestion: `These files changed together in ${count} commits. Consider whether they should be colocated, refactored, or have shared tests.`,
+    suggestion: `Coupled change: ${a} and ${b} were modified together in ${count} commits (subjects: ${commits.map(c => c.subject).join(', ')}). Consider whether these should be merged, refactored to reduce coupling, or share common tests.`,
   }));
 }
 

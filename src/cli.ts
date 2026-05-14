@@ -485,7 +485,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<{ ok
         const icon = card.type === 'churn-hotspot' ? '\u26A1' : card.type === 'repeated-fix' ? '\u274C' : card.type === 'revert-pattern' ? '\u21A9' : card.type === 'test-gap' ? '\u26A0' : card.type === 'rationale-cluster' ? '\uD83D\uDCA1' : '\uD83D\uDD17';
         const statusTag = card.status === 'accepted' ? ' ✅' : card.status === 'rejected' ? ' [rejected]' : '';
         process.stdout.write(`  ${icon} ${card.title}${statusTag}\n`);
-        process.stdout.write(`     [${card.id.slice(0, 10)}] Confidence: ${card.confidence} | ${card.supportingCommits.length} commits\n`);
+        process.stdout.write(`     [${card.id}] Confidence: ${card.confidence} | ${card.supportingCommits.length} commits\n`);
         process.stdout.write(`     ${card.suggestion}\n\n`);
       }
     } else {
@@ -602,7 +602,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<{ ok
       process.stdout.write(`  Index: ${result.indexStats.entries} entries (${result.indexStats.model}) at ${result.indexStats.headSha}\n\n`);
       for (const r of result.results) {
         process.stdout.write(`  ${r.score.toFixed(3)}  ${r.text.slice(0, 100)}...\n`);
-        process.stdout.write(`        [${r.id.slice(0, 10)}] ${r.metadata.type}\n\n`);
+        process.stdout.write(`        [${r.id}] ${r.metadata.type}\n\n`);
       }
     }
     return { ok: true };
@@ -719,6 +719,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<{ ok
     }
     const repoRoot = resolveRepoRoot(args.repo);
     const entry = setCardStatus(repoRoot, cardId, 'accepted');
+    invalidateCache(repoRoot);
     process.stderr.write(`accepted card ${cardId} at ${entry?.updatedAt}\n`);
     return { ok: true };
   }
@@ -732,6 +733,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<{ ok
     }
     const repoRoot = resolveRepoRoot(args.repo);
     const entry = setCardStatus(repoRoot, cardId, 'rejected');
+    invalidateCache(repoRoot);
     process.stderr.write(`rejected card ${cardId} at ${entry?.updatedAt}\n`);
     return { ok: true };
   }
@@ -747,7 +749,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<{ ok
       } else {
         process.stdout.write(`  Review state (${entries.length} cards)\n\n`);
         for (const [id, entry] of entries) {
-          process.stdout.write(`  [${id.slice(0, 10)}] ${entry.status}  ${entry.updatedAt.slice(0, 10)}\n`);
+          process.stdout.write(`  [${id}] ${entry.status}  ${entry.updatedAt.slice(0, 10)}\n`);
         }
       }
     } else {
