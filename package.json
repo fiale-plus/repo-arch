@@ -8,6 +8,7 @@
   },
   "files": [
     "dist/",
+    "pi/",
     "README.md",
     "LICENSE"
   ],
@@ -28,6 +29,18 @@
   },
   "author": "fiale-plus",
   "license": "MIT",
+  "keywords": [
+    "project-memory",
+    "git-history",
+    "cards",
+    "retrieval",
+    "training",
+    "pi-package"
+  ],
+  "pi": {
+    "extensions": ["./pi/extensions"],
+    "skills": ["./pi/skills"]
+  },
   "devDependencies": {
     "@types/node": "^22.15.3",
     "tsx": "^4.19.4",

@@ -19,11 +19,12 @@
 
 ## Next
 
-- release flow docs and automation
-- GitHub PR / issue context
+- flow run / flow inspect as the stable end-to-end contract
+- repo-arch config bootstrap (`repo-arch init`)
 - richer eval fixtures
-- optional adapters later
+- agent-friendly packaging (`pi` skill + extension bridge)
+- GitHub PR / issue context
 
 ## Later
 
-Adapters can be added later, but the CLI should stay the source of truth.
+Adapters can be added later, but the CLI flow should stay the source of truth.

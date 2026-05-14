@@ -14,6 +14,12 @@ Repo-Arch turns repository history into local memory that humans and agents can 
 
 Repo-Arch already covers history mining, signal classification, cards, `why`, diff warnings, staleness checks, similarity search, evals, datasets, and training prep.
 
+The stable user entrypoint is now the flow contract:
+
+- `repo-arch init`
+- `repo-arch flow run`
+- `repo-arch flow inspect`
+
 ## Not the focus
 
 - not a generic chat UI
@@ -21,4 +27,4 @@ Repo-Arch already covers history mining, signal classification, cards, `why`, di
 
 ## Later
 
-If adapters are added later, they should wrap the CLI and preserve the same contract.
+If adapters or agent integrations are added later, they should wrap the CLI flow and preserve the same artifact contract.

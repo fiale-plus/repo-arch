@@ -26,7 +26,7 @@ export type VectorIndex = {
   createdAt: string;
 };
 
-let extractor: any = null;
+let extractor: { model: string; pipe: any } | null = null;
 
 function ensureCacheDir(repoRoot: string): string {
   const dir = path.join(repoRoot, '.repo-arch', 'index');
@@ -43,11 +43,13 @@ function cacheKey(repoRoot: string, headSha: string): string {
 }
 
 export async function loadExtractor(config: EmbedderConfig = {}): Promise<any> {
-  if (extractor) return extractor;
+  const model = config.model ?? DEFAULT_MODEL;
+  if (extractor && extractor.model === model) return extractor.pipe;
   try {
     const { pipeline } = await import('@huggingface/transformers');
-    extractor = await pipeline('feature-extraction', config.model ?? DEFAULT_MODEL);
-    return extractor;
+    const pipe = await pipeline('feature-extraction', model);
+    extractor = { model, pipe };
+    return pipe;
   } catch (error) {
     throw new Error(
       `Failed to load embedding model. Install with: npm install @huggingface/transformers\n  ${error instanceof Error ? error.message : String(error)}`,
@@ -91,8 +93,8 @@ export async function buildIndex(
 
   const vectorEntries: VectorEntry[] = [];
   for (const entry of entries) {
-    const embedding = await embed(entry.text, options);
-    vectorEntries.push({ ...entry, embedding });
+    const result = await pipe(entry.text, { pooling: 'mean', normalize: true });
+    vectorEntries.push({ ...entry, embedding: Array.from(result.data) as number[] });
   }
 
   const index: VectorIndex = {
