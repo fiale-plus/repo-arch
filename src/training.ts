@@ -327,6 +327,8 @@ export type TrainOptions = {
   iters?: number;
   adapterName?: string;
   learningRate?: number;
+  resumeAdapterFile?: string;
+  saveEvery?: number;
   /** Whether to actually run training (vs just printing the command) */
   run?: boolean;
 };
@@ -336,6 +338,8 @@ export type TrainPlan = {
   trainFile: string;
   validFile: string;
   model: string;
+  iters: number;
+  learningRate: number;
   adapterPath: string;
   command: string;
   examples: number;
@@ -375,6 +379,7 @@ export function prepareTrain(options: TrainOptions = {}): TrainPlan {
   const adapterPath = path.join(repoRoot, '.repo-arch', 'adapters', adapterName);
   const iters = options.iters ?? 100;
   const learningRate = options.learningRate ?? 1e-5;
+  const saveEvery = options.saveEvery ?? 100;
 
   const command = [
     'mlx_lm.lora',
@@ -382,6 +387,7 @@ export function prepareTrain(options: TrainOptions = {}): TrainPlan {
     `--model ${model}`,
     `--data ${outDir}`,
     `--adapter-path ${adapterPath}`,
+    ...(options.resumeAdapterFile ? [`--resume-adapter-file ${options.resumeAdapterFile}`] : []),
     `--num-layers 4`,
     `--batch-size 4`,
     `--iters ${iters}`,
@@ -389,6 +395,7 @@ export function prepareTrain(options: TrainOptions = {}): TrainPlan {
     `--learning-rate ${learningRate}`,
     `--steps-per-report 10`,
     `--steps-per-eval 10`,
+    `--save-every ${saveEvery}`,
   ].join(' \\\n  ');
 
   return {
@@ -396,10 +403,26 @@ export function prepareTrain(options: TrainOptions = {}): TrainPlan {
     trainFile,
     validFile,
     model,
+    iters,
+    learningRate,
     adapterPath,
     command,
     examples: examples.length,
   };
+}
+
+export function findLatestAdapterCheckpoint(adapterPath: string): string | null {
+  if (!fs.existsSync(adapterPath)) return null;
+  const files = fs.readdirSync(adapterPath)
+    .filter(file => /^\d+_adapters\.safetensors$/.test(file))
+    .sort((a, b) => {
+      const ai = parseInt(a, 10);
+      const bi = parseInt(b, 10);
+      return bi - ai;
+    });
+  if (files.length > 0) return path.join(adapterPath, files[0]!);
+  const final = path.join(adapterPath, 'adapters.safetensors');
+  return fs.existsSync(final) ? final : null;
 }
 
 export function formatTrain(plan: TrainPlan): string {

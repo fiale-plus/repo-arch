@@ -16,6 +16,7 @@
 - evals
 - datasets
 - training prep
+- persistent training cycle
 
 ## Next
 
@@ -24,6 +25,7 @@
 - richer eval fixtures
 - agent-friendly packaging (`pi` skill + extension bridge)
 - GitHub PR / issue context
+- persistent train cycle / resume UX
 
 ## Later
 

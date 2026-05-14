@@ -10,6 +10,10 @@ repo-arch flow run --repo .
 repo-arch flow run full --repo .
 repo-arch flow inspect --repo .
 repo-arch train prepare --repo .
+repo-arch train cycle --repo .
+repo-arch train resume --repo .
+repo-arch train status --repo .
+repo-arch train list --repo .
 repo-arch train run --repo .
 ```
 
@@ -25,6 +29,8 @@ A run lives under `.repo-arch/runs/<run-id>/` and includes:
 - `dataset.jsonl` — training examples
 - `dataset.json` — dataset summary
 - `training/train-plan.json` — LoRA plan
+- `training/session.json` — persistent training status
+- `training/cycles.jsonl` — cycle history and checkpoints
 - `index.json` — embeddings metadata when `flow run full` is used
 - `eval.json` — retrieval metrics when `flow run full` is used
 
@@ -32,6 +38,8 @@ A run lives under `.repo-arch/runs/<run-id>/` and includes:
 
 ```bash
 repo-arch train prepare --repo .
+repo-arch train cycle --repo .
+repo-arch train resume --repo .
 repo-arch train run --repo .
 ```
 
@@ -39,4 +47,6 @@ repo-arch train run --repo .
 
 - Prefer `flow run` and `flow inspect` over internal file paths.
 - Use `review list` before training to reduce noisy cards.
+- Use `train cycle` to continue a persistent training loop.
+- Use `train status` and `train list` to inspect progress.
 - Keep `repo-arch.config.json` in the repo root for stable defaults.

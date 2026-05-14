@@ -41,6 +41,10 @@ repo-arch index
 repo-arch eval
 repo-arch dataset
 repo-arch train prepare --repo .
+repo-arch train cycle --repo .
+repo-arch train resume --repo .
+repo-arch train status --repo .
+repo-arch train list --repo .
 repo-arch train run --repo .
 ```
 
@@ -65,4 +69,4 @@ Use the card review state to tighten training and warnings:
 2. accept the useful ones
 3. reject the noisy ones
 4. run `repo-arch flow run full --repo .` again
-5. inspect the latest run and retrain when ready
+5. continue the training loop with `repo-arch train cycle --repo .`

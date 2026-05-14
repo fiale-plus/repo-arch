@@ -23,7 +23,9 @@ repo-arch flow inspect --repo .
 5. `repo-arch review list` — curate accepted/rejected cards
 6. `repo-arch eval` — compare retrieval strategies
 7. `repo-arch train prepare` — export training plan
-8. `repo-arch train run` — execute training directly
+8. `repo-arch train cycle` — continue the persistent training loop
+9. `repo-arch train resume` — resume from the latest checkpoint
+10. `repo-arch train run` — execute training directly
 
 ## Investigation commands
 
@@ -40,6 +42,9 @@ repo-arch similar "why auth middleware token-only?" --json
 - Want the happy path: `repo-arch flow run full`
 - Need run details: `repo-arch flow inspect`
 - Need curation: `repo-arch review list`
-- Need training: `repo-arch train run`
+- Need training: `repo-arch train cycle`
+- Need to resume: `repo-arch train resume`
+- Need status: `repo-arch train status`
+- Need the history: `repo-arch train list`
 
 Keep the CLI as the source of truth; use this skill only as a guide to the flow.

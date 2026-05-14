@@ -4,7 +4,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as childProcess from 'node:child_process';
-import { prepareTrain, formatTrain, generateDataset } from '../src/training.js';
+import { prepareTrain, formatTrain, generateDataset, findLatestAdapterCheckpoint } from '../src/training.js';
+import { formatTrainStatus, formatTrainList } from '../src/train-cycle.js';
 
 function setupRepo(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'repo-arch-test-'));
@@ -91,6 +92,8 @@ test('formatTrain includes command', () => {
     trainFile: '/tmp/data/train.jsonl',
     validFile: '/tmp/data/valid.jsonl',
     model: 'test-model',
+    iters: 42,
+    learningRate: 1e-5,
     adapterPath: '/tmp/adapter',
     command: 'mlx_lm.lora --train --model test-model',
     examples: 10,
@@ -99,4 +102,41 @@ test('formatTrain includes command', () => {
   assert.ok(output.includes('test-model'));
   assert.ok(output.includes('mlx_lm.lora'));
   assert.ok(output.includes('10 examples'));
+});
+
+test('findLatestAdapterCheckpoint picks highest numbered checkpoint', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'repo-arch-checkpoint-'));
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, '0000100_adapters.safetensors'), 'a');
+  fs.writeFileSync(path.join(dir, '0000200_adapters.safetensors'), 'b');
+  fs.writeFileSync(path.join(dir, 'adapters.safetensors'), 'final');
+
+  const latest = findLatestAdapterCheckpoint(dir);
+  assert.equal(latest, path.join(dir, '0000200_adapters.safetensors'));
+});
+
+test('formatTrainStatus and formatTrainList render persistent training state', () => {
+  const session = {
+    schemaVersion: 1 as const,
+    sessionId: 'run-123-qwen',
+    runId: 'run-123',
+    runDir: '/tmp/run-123',
+    flowManifestPath: '/tmp/run-123/manifest.json',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:01:00.000Z',
+    status: 'ok' as const,
+    model: 'test-model',
+    iters: 42,
+    learningRate: 1e-5,
+    adapterPath: '/tmp/run-123/adapters',
+    resumeAdapterFile: '/tmp/run-123/adapters/0000100_adapters.safetensors',
+    latestCheckpoint: '/tmp/run-123/adapters/0000200_adapters.safetensors',
+    command: 'mlx_lm.lora --train',
+    trainPlan: '/tmp/run-123/training/train-plan.json',
+  };
+  const status = formatTrainStatus(session);
+  const list = formatTrainList([session]);
+  assert.ok(status.includes('run-123-qwen'));
+  assert.ok(status.includes('Latest checkpoint'));
+  assert.ok(list.includes('run-123-qwen'));
 });
