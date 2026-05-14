@@ -17,12 +17,13 @@ Repo-Arch mines repository history, classifies commit signals, builds cards, exp
 
 ```bash
 repo-arch init
-repo-arch flow run --full
-repo-arch flow inspect latest
+repo-arch flow run --repo .
+repo-arch flow run full --repo .
+repo-arch flow inspect --repo .
 repo-arch review list
 repo-arch eval
 repo-arch dataset
-repo-arch train --run
+repo-arch train run --repo .
 ```
 
 ## Docs

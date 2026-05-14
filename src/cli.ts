@@ -21,7 +21,6 @@ import { runFlow, inspectFlow, formatFlowRun, formatFlowInspect } from './flow.j
 export type ParsedArgs = {
   help?: boolean;
   json?: boolean;
-  run?: boolean;
   repo?: string;
   out?: string;
   base?: string;
@@ -34,8 +33,6 @@ export type ParsedArgs = {
   noCache?: boolean;
   invalidate?: boolean;
   config?: string;
-  full?: boolean;
-  runTrain?: boolean;
   includeRejected?: boolean;
   _: string[];
 };
@@ -133,19 +130,21 @@ export function helpFor(command: string): string | null {
 
   Example:
     repo-arch dataset --repo .`,
-    'train': `repo-arch train --repo <path> [--config <file>] [--out <dir>] [--model <name>] [--iters <n>] [--learning-rate <n>] [--run]
+    'train': `repo-arch train <prepare|run> --repo <path> [--config <file>] [--out <dir>] [--model <name>] [--iters <n>] [--learning-rate <n>]
 
-  Prepare and optionally run mlx-lm LoRA training.
+  Prepare or execute LoRA training.
 
   Example:
-    repo-arch train --repo . --run`,
-    'flow': `repo-arch flow run --repo <path> [--config repo-arch.config.json] [--full] [--run-train]
+    repo-arch train prepare --repo .
+    repo-arch train run --repo .`,
+    'flow': `repo-arch flow run [prepare|full] --repo <path> [--config repo-arch.config.json]
 
   Orchestrate the end-to-end flow: history -> cards -> dataset -> train plan -> embeddings/eval.
 
   Examples:
-    repo-arch flow run --repo . --full
-    repo-arch flow inspect latest --repo .`,
+    repo-arch flow run --repo .
+    repo-arch flow run full --repo .
+    repo-arch flow inspect --repo .`,
   };
   const aliases: Record<string, string> = {
     'mine': 'mine-history',
@@ -175,12 +174,12 @@ export function tutorial(): string {
   ┌─ 2.  flow run  ─────────────────────────────────────────┐
   │  Generate a run bundle with history, cards, dataset,    │
   │  training plan, and optional embeddings/eval.           │
-  │  repo-arch flow run --full                              │
+  │  repo-arch flow run full                                │
   └─────────────────────────────────────────────────────────┘
 
   ┌─ 3.  flow inspect  ─────────────────────────────────────┐
   │  Review the latest run and next steps.                  │
-  │  repo-arch flow inspect latest                          │
+  │  repo-arch flow inspect                                 │
   └─────────────────────────────────────────────────────────┘
 
   ┌─ 4.  review / accept / reject  ─────────────────────────┐
@@ -191,8 +190,8 @@ export function tutorial(): string {
   └─────────────────────────────────────────────────────────┘
 
   ┌─ 5.  train  ────────────────────────────────────────────┐
-  │  Run LoRA fine-tuning when you want the final adapter.   │
-  │  repo-arch train --repo . --run                          │
+  │  Prepare or run LoRA fine-tuning.                       │
+  │  repo-arch train prepare|run                            │
   └─────────────────────────────────────────────────────────┘
 
   Additional tools:
@@ -213,7 +212,8 @@ Recommended workflow:
   3. repo-arch review list   — curate cards before training
   4. repo-arch eval          — run retrieval benchmarks
   5. repo-arch dataset       — export training examples
-  6. repo-arch train         — run LoRA fine-tuning
+  6. repo-arch train prepare — write the training plan
+  7. repo-arch train run     — execute LoRA fine-tuning
 
 Commands:
   init            Write a starter repo-arch.config.json
@@ -240,9 +240,7 @@ Global options:
   --json                 Output structured JSON
   --help                 Show help
 
-Flow options:
-  --full                 Add embeddings and eval to flow run
-  --run-train            Execute mlx-lm after preparing the training plan
+Training options:
   --learning-rate <n>    Override the training learning rate
 
 Learn more:
@@ -294,18 +292,6 @@ export function parseArgs(argv: string[]): ParsedArgs {
     }
     if (token === '--json') {
       args.json = true;
-      continue;
-    }
-    if (token === '--run') {
-      args.run = true;
-      continue;
-    }
-    if (token === '--run-train') {
-      args.runTrain = true;
-      continue;
-    }
-    if (token === '--full') {
-      args.full = true;
       continue;
     }
     if (token === '--include-rejected') {
@@ -361,19 +347,24 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<{ ok
     const outPath = args.out ? (path.isAbsolute(args.out) ? args.out : path.resolve(repoRoot, args.out)) : path.join(repoRoot, DEFAULT_CONFIG_FILE);
     writeRepoArchConfigTemplate(outPath);
     process.stdout.write(`wrote ${outPath}\n`);
-    process.stdout.write(`next: repo-arch flow run --repo ${repoRoot} --config ${path.relative(repoRoot, outPath)} --full\n`);
+    process.stdout.write(`next: repo-arch flow run --repo ${repoRoot} --config ${path.relative(repoRoot, outPath)}\n`);
     return { ok: true };
   }
 
   if (command === 'flow') {
     const sub = args._[1];
     if (sub === 'run') {
+      const preset = args._[2] ?? 'prepare';
+      if (preset !== 'prepare' && preset !== 'full') {
+        process.stderr.write(`Usage: repo-arch flow run [prepare|full]\n`);
+        process.exitCode = 1;
+        return { ok: false, error: 'Expected preset: prepare|full' };
+      }
       const result = await runFlow({
         repoPath: args.repo,
         configPath: args.config,
         outPath: args.out,
-        full: args.full,
-        runTrain: args.runTrain,
+        full: preset === 'full',
         includeRejected: args.includeRejected,
         minConfidence: args.minConfidence,
         maxCards: args.maxCards,
@@ -625,6 +616,12 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<{ ok
   }
 
   if (command === 'train') {
+    const mode = args._[1] ?? 'prepare';
+    if (mode !== 'prepare' && mode !== 'run') {
+      process.stderr.write(`Usage: repo-arch train [prepare|run]\n`);
+      process.exitCode = 1;
+      return { ok: false, error: 'Expected mode: prepare|run' };
+    }
     try {
       const config = args.config ? loadRepoArchConfig({ repoPath: args.repo, configPath: args.config }) : null;
       const plan = prepareTrain({
@@ -633,10 +630,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<{ ok
         model: args.model ?? config?.training.model,
         iters: args.iters ?? config?.training.iters,
         learningRate: args.learningRate ?? config?.training.learningRate,
-        run: args.run,
+        run: mode === 'run',
       });
       process.stdout.write(formatTrain(plan));
-      if (args.run) {
+      if (mode === 'run') {
         const { execSync } = await import('node:child_process');
         process.stderr.write(`Running training...\n`);
         try {

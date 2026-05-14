@@ -18,6 +18,7 @@ The stable user entrypoint is now the flow contract:
 
 - `repo-arch init`
 - `repo-arch flow run`
+- `repo-arch flow run full`
 - `repo-arch flow inspect`
 
 ## Not the focus

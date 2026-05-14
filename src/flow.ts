@@ -1,7 +1,6 @@
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { mineHistory, type MineHistoryResult } from './git-history.js';
 import { classifyHistory } from './signals.js';
@@ -17,7 +16,6 @@ export type FlowRunOptions = {
   configPath?: string;
   outPath?: string;
   full?: boolean;
-  runTrain?: boolean;
   includeRejected?: boolean;
   minConfidence?: number;
   maxCards?: number;
@@ -53,7 +51,6 @@ export type FlowManifest = {
     startedAt: string;
     finishedAt?: string;
     full: boolean;
-    runTrain: boolean;
   };
   config: {
     runsDir: string;
@@ -195,7 +192,6 @@ export function buildFlowManifest(params: {
   startedAt: string;
   finishedAt?: string;
   full: boolean;
-  runTrain: boolean;
   stages: FlowStageResult[];
   cards: InsightCard[];
   dataset: DatasetResult;
@@ -224,7 +220,6 @@ export function buildFlowManifest(params: {
       startedAt: params.startedAt,
       finishedAt: params.finishedAt,
       full: params.full,
-      runTrain: params.runTrain,
     },
     config: {
       runsDir: params.config.flow.runsDir,
@@ -244,7 +239,6 @@ export function buildFlowManifest(params: {
       latest: path.relative(params.runDir, path.join(path.dirname(params.runDir), 'latest.json')),
       ...(params.evalReport ? { eval: 'eval.json' } : {}),
       ...(params.evalReport ? { index: 'index.json' } : {}),
-      adapter: path.relative(params.config.repoRoot, params.trainPlan.adapterPath),
     },
     summary: {
       commits: params.history.count,
@@ -290,7 +284,6 @@ export async function runFlow(options: FlowRunOptions = {}): Promise<FlowRunResu
   let evalReport: EvalReport | undefined;
 
   const full = options.full ?? false;
-  const runTrain = options.runTrain ?? config.training.run;
   const includeRejected = options.includeRejected ?? config.training.includeRejected;
   const cardMinConfidence = options.minConfidence ?? config.cards.minConfidence;
   const cardMaxCards = options.maxCards ?? config.cards.maxCards;
@@ -379,7 +372,7 @@ export async function runFlow(options: FlowRunOptions = {}): Promise<FlowRunResu
     writeJson(path.join(runDir, 'training', 'train-plan.json'), {
       schemaVersion: 1,
       ...trainPlan,
-      note: 'Use the command below to run training manually, or pass --run-train to flow run.',
+      note: 'Use repo-arch train run to execute training.',
     });
     stages.push(makeStage('train-plan', 'ok', trainPlanStartedAt, {
       artifact: path.join('training', 'train-plan.json'),
@@ -445,42 +438,11 @@ export async function runFlow(options: FlowRunOptions = {}): Promise<FlowRunResu
     } else {
       const indexStartedAt = now();
       stages.push(makeStage('index', 'skipped', indexStartedAt, {
-        details: { reason: 'use --full to build embeddings' },
+        details: { reason: 'use repo-arch flow run full to build embeddings' },
       }));
       const evalStartedAt = now();
       stages.push(makeStage('eval', 'skipped', evalStartedAt, {
-        details: { reason: 'use --full to run evaluation' },
-      }));
-    }
-
-    if (runTrain) {
-      const trainStartedAt = now();
-      try {
-        execSync(trainPlan.command.replace(/\\\n  /g, ' '), {
-          stdio: 'inherit',
-          cwd: config.repoRoot,
-        });
-        stages.push(makeStage('train', 'ok', trainStartedAt, {
-          artifact: path.relative(config.repoRoot, trainPlan.adapterPath),
-          details: {
-            model: trainPlan.model,
-            command: trainPlan.command,
-            adapterPath: path.relative(config.repoRoot, trainPlan.adapterPath),
-          },
-        }));
-      } catch (error) {
-        stages.push(makeStage('train', 'failed', trainStartedAt, {
-          error: error instanceof Error ? error.message : String(error),
-          details: {
-            model: trainPlan.model,
-          },
-        }));
-        throw error instanceof Error ? error : new Error(String(error));
-      }
-    } else {
-      const trainStartedAt = now();
-      stages.push(makeStage('train', 'skipped', trainStartedAt, {
-        details: { reason: 'use --run-train to execute mlx-lm' },
+        details: { reason: 'use repo-arch flow run full to run evaluation' },
       }));
     }
 
@@ -491,7 +453,6 @@ export async function runFlow(options: FlowRunOptions = {}): Promise<FlowRunResu
       startedAt,
       finishedAt,
       full,
-      runTrain,
       stages,
       cards,
       dataset: dataset!,
@@ -523,7 +484,6 @@ export async function runFlow(options: FlowRunOptions = {}): Promise<FlowRunResu
       startedAt,
       finishedAt,
       full,
-      runTrain,
       stages,
       cards,
       dataset: dataset ?? {
@@ -596,23 +556,12 @@ export function formatFlowRun(result: FlowRunResult): string {
 
   if (manifest.summary.keywordHitRate !== undefined || manifest.summary.embeddingHitRate !== undefined) {
     lines.push(`  eval         keyword ${formatPercent(manifest.summary.keywordHitRate)} | embedding ${formatPercent(manifest.summary.embeddingHitRate)}`);
-  } else {
-    lines.push(`  eval         skipped (use --full)`);
-  }
-
-  const trainStage = manifest.stages.find(stage => stage.name === 'train');
-  if (trainStage?.status === 'skipped') {
-    lines.push(`  train        skipped (use --run-train)`);
-  } else if (trainStage?.status === 'failed') {
-    lines.push(`  train        failed`);
-  } else if (trainStage?.status === 'ok') {
-    lines.push(`  train        executed`);
   }
 
   lines.push(`\n  Next:`);
-  lines.push(`  repo-arch flow inspect latest`);
+  lines.push(`  repo-arch flow inspect`);
   lines.push(`  repo-arch review list`);
-  lines.push(`  repo-arch flow run --config ${manifest.run.configPath ?? 'repo-arch.config.json'} --full --run-train`);
+  lines.push(`  repo-arch train run`);
   lines.push('');
   return lines.join('\n');
 }
@@ -649,11 +598,9 @@ export function formatFlowInspect(result: FlowInspectResult): string {
 
   lines.push(`\n  Next:`);
   if (manifest.stages.find(stage => stage.name === 'index' && stage.status === 'skipped')) {
-    lines.push('  repo-arch flow run --full');
+    lines.push('  repo-arch flow run full');
   }
-  if (manifest.stages.find(stage => stage.name === 'train' && stage.status === 'skipped')) {
-    lines.push('  repo-arch flow run --run-train');
-  }
+  lines.push('  repo-arch train run');
   lines.push('  repo-arch review list');
   lines.push('');
   return lines.join('\n');

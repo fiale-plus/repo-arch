@@ -9,20 +9,21 @@ description: Self-contained repo-arch workflow for turning git history into card
 
 ```bash
 repo-arch init
-repo-arch flow run --full
-repo-arch flow inspect latest
+repo-arch flow run --repo .
+repo-arch flow run full --repo .
+repo-arch flow inspect --repo .
 ```
 
 ## Core workflow
 
 1. `repo-arch init` — write a starter `repo-arch.config.json`
 2. `repo-arch flow run` — build history, cards, dataset, and train plan
-3. `repo-arch flow run --full` — also build embeddings and evaluation
-4. `repo-arch flow run --full --run-train` — run the LoRA training step too
-5. `repo-arch flow inspect latest` — see run status, artifacts, and next steps
-6. `repo-arch review list` — curate accepted/rejected cards
-7. `repo-arch eval` — compare retrieval strategies
-8. `repo-arch train --run` — prepare or execute training directly
+3. `repo-arch flow run full` — also build embeddings and evaluation
+4. `repo-arch flow inspect` — see run status, artifacts, and next steps
+5. `repo-arch review list` — curate accepted/rejected cards
+6. `repo-arch eval` — compare retrieval strategies
+7. `repo-arch train prepare` — export training plan
+8. `repo-arch train run` — execute training directly
 
 ## Investigation commands
 
@@ -36,9 +37,9 @@ repo-arch similar "why auth middleware token-only?" --json
 ## What to suggest next
 
 - First-time user: `repo-arch init`
-- Want the happy path: `repo-arch flow run --full`
-- Need run details: `repo-arch flow inspect latest`
+- Want the happy path: `repo-arch flow run full`
+- Need run details: `repo-arch flow inspect`
 - Need curation: `repo-arch review list`
-- Need training: `repo-arch train --run`
+- Need training: `repo-arch train run`
 
 Keep the CLI as the source of truth; use this skill only as a guide to the flow.

@@ -1,13 +1,16 @@
 # Flow
 
-Repo-Arch is easiest to use as a self-contained flow.
+Repo-Arch works best as a self-contained flow.
 
 ## Happy path
 
 ```bash
 repo-arch init
-repo-arch flow run --full
-repo-arch flow inspect latest
+repo-arch flow run --repo .
+repo-arch flow run full --repo .
+repo-arch flow inspect --repo .
+repo-arch train prepare --repo .
+repo-arch train run --repo .
 ```
 
 ## What the flow writes
@@ -22,17 +25,15 @@ A run lives under `.repo-arch/runs/<run-id>/` and includes:
 - `dataset.jsonl` — training examples
 - `dataset.json` — dataset summary
 - `training/train-plan.json` — LoRA plan
-- `.repo-arch/adapters/<name>/` — adapter weights when `--run-train` is used
-- `index.json` — embeddings metadata when `--full` is used
-- `eval.json` — retrieval metrics when `--full` is used
+- `index.json` — embeddings metadata when `flow run full` is used
+- `eval.json` — retrieval metrics when `flow run full` is used
 
 ## Train later
 
 ```bash
-repo-arch flow run --full --run-train
+repo-arch train prepare --repo .
+repo-arch train run --repo .
 ```
-
-That keeps the CLI reproducible while still allowing the final training step when you are ready.
 
 ## Notes for agents
 

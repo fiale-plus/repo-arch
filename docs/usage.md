@@ -8,8 +8,9 @@ Repo-Arch is meant to stay boring to script and easy to read.
 
 ```bash
 repo-arch init
-repo-arch flow run --full
-repo-arch flow inspect latest
+repo-arch flow run --repo .
+repo-arch flow run full --repo .
+repo-arch flow inspect --repo .
 ```
 
 ### History and cards
@@ -39,7 +40,8 @@ repo-arch similar "why auth middleware token-only?" --json
 repo-arch index
 repo-arch eval
 repo-arch dataset
-repo-arch train --run
+repo-arch train prepare --repo .
+repo-arch train run --repo .
 ```
 
 ## JSON contract
@@ -62,5 +64,5 @@ Use the card review state to tighten training and warnings:
 1. generate cards
 2. accept the useful ones
 3. reject the noisy ones
-4. run `repo-arch flow run --full` again
+4. run `repo-arch flow run full --repo .` again
 5. inspect the latest run and retrain when ready
