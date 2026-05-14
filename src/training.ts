@@ -182,7 +182,14 @@ function generateNegative(cards: InsightCard[]): DatasetExample[] {
     (file: string) => `What keeps breaking in ${file}?`,
     (file: string) => `Can you review ${file} and tell me the risk?`,
   ];
-  const answer = 'No historical warnings found. Standard review applies.';
+  const answers = [
+    'No historical warnings found. Standard review applies.',
+    'This file has no recorded issues in the project history. Standard review applies.',
+    'No relevant past incidents for this file. Proceed with standard review.',
+    'No historical patterns detected for this path. Standard code review applies.',
+    'This change does not intersect with any known historical risks. Standard review is sufficient.',
+  ];
+  const getAnswer = (idx: number) => answers[idx % answers.length];
   const hardFiles = new Set(['src/new-feature.ts', 'packages/unknown/pkg.ts']);
   const extraPrompts = [
     (file: string) => `Review this change touching ${file}.\nWhat risks should I check?`,
@@ -195,7 +202,7 @@ function generateNegative(cards: InsightCard[]): DatasetExample[] {
       negatives.push({
         messages: [
           { role: 'user', content: makePrompt(file) },
-          { role: 'assistant', content: answer },
+          { role: 'assistant', content: getAnswer(negatives.length) },
         ],
         sourceCardId: `negative:${file}`,
         taskType: 'negative',
@@ -208,7 +215,7 @@ function generateNegative(cards: InsightCard[]): DatasetExample[] {
           negatives.push({
             messages: [
               { role: 'user', content: makePrompt(file) },
-              { role: 'assistant', content: answer },
+              { role: 'assistant', content: getAnswer(negatives.length) },
             ],
             sourceCardId: `negative:${file}:hard:${i}`,
             taskType: 'negative',
@@ -222,7 +229,7 @@ function generateNegative(cards: InsightCard[]): DatasetExample[] {
         negatives.push({
           messages: [
             { role: 'user', content: `Is there test coverage for ${file}?` },
-            { role: 'assistant', content: answer },
+            { role: 'assistant', content: getAnswer(negatives.length) },
           ],
           sourceCardId: `negative:${file}:coverage:${i}`,
           taskType: 'negative',
