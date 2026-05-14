@@ -13,28 +13,38 @@ npm install -g @fiale-plus/repo-arch
 
 Repo-Arch mines repository history, classifies commit signals, builds cards, explains files, warns on diffs, checks staleness, runs similarity search, prepares evals, and generates training data.
 
+## Pi install
+
+```bash
+pi install npm:@fiale-plus/repo-arch
+pi install git:github.com/fiale-plus/repo-arch
+pi -e git:github.com/fiale-plus/repo-arch   # try without installing
+```
+
+The package exposes a thin pi skill + extension bridge, but `repo-arch` CLI remains the source of truth.
+
 ## CLI-first
 
 ```bash
-repo-arch mine-history --repo .
-repo-arch classify --repo .
-repo-arch cards --repo .
-repo-arch why src/core.ts --json
-repo-arch check-diff --base main --json
-repo-arch check-stale --json
-repo-arch index
-repo-arch similar "why auth middleware token-only?" --json
+repo-arch init
+repo-arch flow run --repo .
+repo-arch flow run full --repo .
+repo-arch flow inspect --repo .
+repo-arch review list
 repo-arch eval
 repo-arch dataset
-repo-arch train
+repo-arch train cycle --repo .
+repo-arch train resume --repo .
+repo-arch train run --repo .
 ```
 
 ## Docs
 
+- [docs/flow.md](./docs/flow.md)
 - [docs/vision.md](./docs/vision.md)
 - [docs/usage.md](./docs/usage.md)
 - [docs/release-flow.md](./docs/release-flow.md)
 - [docs/roadmap.md](./docs/roadmap.md)
 - [docs/embeddings.md](./docs/embeddings.md)
 
-CLI is the primary interface. Optional adapters come later.
+CLI is the primary interface. The `pi` skill and extension are thin guides over the same contract.

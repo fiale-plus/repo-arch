@@ -4,6 +4,15 @@ Repo-Arch is meant to stay boring to script and easy to read.
 
 ## Command map
 
+### Flow first
+
+```bash
+repo-arch init
+repo-arch flow run --repo .
+repo-arch flow run full --repo .
+repo-arch flow inspect --repo .
+```
+
 ### History and cards
 
 ```bash
@@ -31,7 +40,12 @@ repo-arch similar "why auth middleware token-only?" --json
 repo-arch index
 repo-arch eval
 repo-arch dataset
-repo-arch train
+repo-arch train prepare --repo .
+repo-arch train cycle --repo .
+repo-arch train resume --repo .
+repo-arch train status --repo .
+repo-arch train list --repo .
+repo-arch train run --repo .
 ```
 
 ## JSON contract
@@ -43,6 +57,7 @@ Use `--json` when another tool will read the output. Keep the shape stable and a
 - prefer local evidence over guesses
 - keep generated cards reviewable
 - cache by repo + HEAD where possible
+- keep `repo-arch.config.json` in the repo root
 - do not make release docs depend on adapters
 - keep the CLI contract stable
 
@@ -53,5 +68,5 @@ Use the card review state to tighten training and warnings:
 1. generate cards
 2. accept the useful ones
 3. reject the noisy ones
-4. invalidate the cache after review changes
-5. regenerate eval / dataset / train
+4. run `repo-arch flow run full --repo .` again
+5. continue the training loop with `repo-arch train cycle --repo .`
