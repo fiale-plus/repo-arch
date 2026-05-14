@@ -17,7 +17,6 @@ import { runEval, formatEval } from './eval.js';
 import { generateDataset, formatDataset, prepareTrain, formatTrain } from './training.js';
 import { loadRepoArchConfig, writeRepoArchConfigTemplate, DEFAULT_CONFIG_FILE } from './config.js';
 import { runFlow, inspectFlow, formatFlowRun, formatFlowInspect } from './flow.js';
-import { runTrainCycle, loadTrainSession, listTrainSessions, formatTrainCycleResult, formatTrainStatus, formatTrainList } from './train-cycle.js';
 
 export type ParsedArgs = {
   help?: boolean;
@@ -131,17 +130,13 @@ export function helpFor(command: string): string | null {
 
   Example:
     repo-arch dataset --repo .`,
-    'train': `repo-arch train <prepare|run|cycle|resume|status|list> --repo <path> [--config <file>] [--out <dir>] [--model <name>] [--iters <n>] [--learning-rate <n>]
+    'train': `repo-arch train <prepare|run> --repo <path> [--config <file>] [--out <dir>] [--model <name>] [--iters <n>] [--learning-rate <n>]
 
-  Prepare, run, or resume LoRA training.
+  Prepare or execute LoRA training.
 
-  Examples:
+  Example:
     repo-arch train prepare --repo .
-    repo-arch train run --repo .
-    repo-arch train cycle --repo .
-    repo-arch train resume --repo .
-    repo-arch train status --repo .
-    repo-arch train list`,
+    repo-arch train run --repo .`,
     'flow': `repo-arch flow run [prepare|full] --repo <path> [--config repo-arch.config.json]
 
   Orchestrate the end-to-end flow: history -> cards -> dataset -> train plan -> embeddings/eval.
@@ -194,15 +189,8 @@ export function tutorial(): string {
   │  repo-arch accept <card-id> --repo .                     │
   └─────────────────────────────────────────────────────────┘
 
-  ┌─ 5.  train cycle / resume / status  ────────────────────┐
-  │  Continue or inspect the persistent training loop.      │
-  │  repo-arch train cycle                                  │
-  │  repo-arch train resume                                 │
-  │  repo-arch train status                                 │
-  └─────────────────────────────────────────────────────────┘
-
-  ┌─ 6.  train prepare / run  ─────────────────────────────┐
-  │  Prepare or run one-shot LoRA fine-tuning.              │
+  ┌─ 5.  train  ────────────────────────────────────────────┐
+  │  Prepare or run LoRA fine-tuning.                       │
   │  repo-arch train prepare|run                            │
   └─────────────────────────────────────────────────────────┘
 
@@ -225,13 +213,12 @@ Recommended workflow:
   4. repo-arch eval          — run retrieval benchmarks
   5. repo-arch dataset       — export training examples
   6. repo-arch train prepare — write the training plan
-  7. repo-arch train cycle   — continue the persistent training loop
-  8. repo-arch train run     — execute one-shot LoRA fine-tuning
+  7. repo-arch train run     — execute LoRA fine-tuning
 
 Commands:
   init            Write a starter repo-arch.config.json
   flow run        Generate run artifacts from history to training
-  flow inspect    Inspect the latest run or a named run
+  flow inspect    Inspect the latest or named run
   mine-history    Scan and cache all git history
   classify        Tag commits with signal types (fix, docs, etc.)
   cards           Generate insight cards from classified commits
@@ -244,7 +231,7 @@ Commands:
   review list     Show accepted/rejected card statuses
   eval            Benchmark card retrieval
   dataset         Export training examples from accepted cards
-  train           Prepare, run, cycle, or inspect LoRA fine-tuning
+  train           Prepare and run LoRA fine-tuning
 
 Global options:
   --repo <path>          Path to a git repository (default: current directory)
@@ -630,83 +617,38 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<{ ok
 
   if (command === 'train') {
     const mode = args._[1] ?? 'prepare';
+    if (mode !== 'prepare' && mode !== 'run') {
+      process.stderr.write(`Usage: repo-arch train [prepare|run]\n`);
+      process.exitCode = 1;
+      return { ok: false, error: 'Expected mode: prepare|run' };
+    }
     try {
       const config = args.config ? loadRepoArchConfig({ repoPath: args.repo, configPath: args.config }) : null;
-      if (mode === 'prepare' || mode === 'run') {
-        const plan = prepareTrain({
-          repoPath: args.repo,
-          outPath: args.out,
-          model: args.model ?? config?.training.model,
-          iters: args.iters ?? config?.training.iters,
-          learningRate: args.learningRate ?? config?.training.learningRate,
-          run: mode === 'run',
-        });
-        process.stdout.write(formatTrain(plan));
-        if (mode === 'run') {
-          const { execSync } = await import('node:child_process');
-          process.stderr.write(`Running training...\n`);
-          try {
-            const cmd = plan.command.replace(/\\\n  /g, ' ');
-            execSync(cmd, { stdio: 'inherit', cwd: resolveRepoRoot(args.repo) });
-          } catch (e) {
-            process.stderr.write(`Training failed. Install mlx-lm: pip install mlx-lm\n`);
-            process.exitCode = 1;
-          }
+      const plan = prepareTrain({
+        repoPath: args.repo,
+        outPath: args.out,
+        model: args.model ?? config?.training.model,
+        iters: args.iters ?? config?.training.iters,
+        learningRate: args.learningRate ?? config?.training.learningRate,
+        run: mode === 'run',
+      });
+      process.stdout.write(formatTrain(plan));
+      if (mode === 'run') {
+        const { execSync } = await import('node:child_process');
+        process.stderr.write(`Running training...\n`);
+        try {
+          const cmd = plan.command.replace(/\\\n  /g, ' ');
+          execSync(cmd, { stdio: 'inherit', cwd: resolveRepoRoot(args.repo) });
+        } catch (e) {
+          process.stderr.write(`Training failed. Install mlx-lm: pip install mlx-lm\n`);
+          process.exitCode = 1;
         }
-        return { ok: true };
       }
-
-      if (mode === 'cycle' || mode === 'resume') {
-        const result = runTrainCycle({
-          repoPath: args.repo,
-          configPath: args.config,
-          runRef: args._[2],
-          model: args.model ?? config?.training.model,
-          iters: args.iters ?? config?.training.iters,
-          learningRate: args.learningRate ?? config?.training.learningRate,
-        }, mode);
-        if (args.json) {
-          process.stdout.write(JSON.stringify({
-            session: result.session,
-            sessionPath: result.sessionPath,
-            cyclesPath: result.cyclesPath,
-            resumeAdapterFile: result.resumeAdapterFile,
-          }, null, 2) + '\n');
-        } else {
-          process.stdout.write(formatTrainCycleResult(result));
-        }
-        return { ok: true };
-      }
-
-      if (mode === 'status') {
-        const flow = inspectFlow({ repoPath: args.repo, configPath: args.config, runId: args._[2] ?? 'latest' });
-        const session = loadTrainSession(flow.runDir);
-        if (args.json) {
-          process.stdout.write(JSON.stringify({ session, flow: flow.manifest }, null, 2) + '\n');
-        } else {
-          process.stdout.write(formatTrainStatus(session, flow));
-        }
-        return { ok: true };
-      }
-
-      if (mode === 'list') {
-        const sessions = listTrainSessions(args.repo, args.config);
-        if (args.json) {
-          process.stdout.write(JSON.stringify(sessions, null, 2) + '\n');
-        } else {
-          process.stdout.write(formatTrainList(sessions));
-        }
-        return { ok: true };
-      }
-
-      process.stderr.write(`Usage: repo-arch train [prepare|run|cycle|resume|status|list]\n`);
-      process.exitCode = 1;
-      return { ok: false, error: 'Expected mode: prepare|run|cycle|resume|status|list' };
     } catch (e) {
       process.stderr.write(`${e instanceof Error ? e.message : String(e)}\n`);
       process.exitCode = 1;
-      return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
+    return { ok: true };
   }
 
   if (command === 'accept') {

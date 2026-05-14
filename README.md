@@ -13,16 +13,6 @@ npm install -g @fiale-plus/repo-arch
 
 Repo-Arch mines repository history, classifies commit signals, builds cards, explains files, warns on diffs, checks staleness, runs similarity search, prepares evals, and generates training data.
 
-## Pi install
-
-```bash
-pi install npm:@fiale-plus/repo-arch
-pi install git:github.com/fiale-plus/repo-arch
-pi -e git:github.com/fiale-plus/repo-arch   # try without installing
-```
-
-The package exposes a thin pi skill + extension bridge, but `repo-arch` CLI remains the source of truth.
-
 ## CLI-first
 
 ```bash
@@ -33,8 +23,6 @@ repo-arch flow inspect --repo .
 repo-arch review list
 repo-arch eval
 repo-arch dataset
-repo-arch train cycle --repo .
-repo-arch train resume --repo .
 repo-arch train run --repo .
 ```
 

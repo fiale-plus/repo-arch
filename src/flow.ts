@@ -372,7 +372,7 @@ export async function runFlow(options: FlowRunOptions = {}): Promise<FlowRunResu
     writeJson(path.join(runDir, 'training', 'train-plan.json'), {
       schemaVersion: 1,
       ...trainPlan,
-      note: 'Use repo-arch train cycle to continue training or train run for a one-shot run.',
+      note: 'Use repo-arch train run to execute training.',
     });
     stages.push(makeStage('train-plan', 'ok', trainPlanStartedAt, {
       artifact: path.join('training', 'train-plan.json'),
@@ -499,8 +499,6 @@ export async function runFlow(options: FlowRunOptions = {}): Promise<FlowRunResu
         trainFile: path.join(runDir, 'training', 'train.jsonl'),
         validFile: path.join(runDir, 'training', 'valid.jsonl'),
         model: config.training.model,
-        iters: config.training.iters,
-        learningRate: config.training.learningRate,
         adapterPath: path.join(config.repoRoot, '.repo-arch', 'adapters', `repo-arch-${history.headSha.slice(0, 7)}`),
         command: '',
         examples: 0,
@@ -534,9 +532,7 @@ function resolveRunDirForInspect(config: ResolvedRepoArchConfig, runId?: string)
     return resolveLatestRunDir(config.flow.runsDir);
   }
   if (path.isAbsolute(runId) || runId.includes(path.sep)) {
-    if (!fs.existsSync(runId)) return null;
-    const stat = fs.statSync(runId);
-    return stat.isDirectory() ? runId : path.dirname(runId);
+    return fs.existsSync(runId) ? runId : null;
   }
   const candidate = path.join(config.flow.runsDir, runId);
   return fs.existsSync(candidate) ? candidate : null;
@@ -565,7 +561,7 @@ export function formatFlowRun(result: FlowRunResult): string {
   lines.push(`\n  Next:`);
   lines.push(`  repo-arch flow inspect`);
   lines.push(`  repo-arch review list`);
-  lines.push(`  repo-arch train cycle`);
+  lines.push(`  repo-arch train run`);
   lines.push('');
   return lines.join('\n');
 }
@@ -604,7 +600,7 @@ export function formatFlowInspect(result: FlowInspectResult): string {
   if (manifest.stages.find(stage => stage.name === 'index' && stage.status === 'skipped')) {
     lines.push('  repo-arch flow run full');
   }
-  lines.push('  repo-arch train cycle');
+  lines.push('  repo-arch train run');
   lines.push('  repo-arch review list');
   lines.push('');
   return lines.join('\n');
