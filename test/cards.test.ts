@@ -192,3 +192,58 @@ test('maxCards limit works', () => {
   const limited = generateCards(records, { maxCards: 3 });
   assert.ok(limited.length <= 3, 'maxCards should cap output');
 });
+
+test('repeated-fix suggestion contains file path and commit subjects', () => {
+  const records: ClassifiedCommit[] = [];
+  for (let i = 0; i < 3; i++) {
+    records.push(mockCommit({
+      sha: `fix${i}`,
+      subject: `fix the ${i === 0 ? 'crash' : i === 1 ? 'timeout' : 'memory leak'}`,
+      files: [{ status: 'M', path: 'src/buggy.ts' }],
+      paths: ['src/buggy.ts'],
+      signals: [{ type: 'fix', label: 'Bug fix', confidence: 1.0, matchedOn: 'subject' }],
+    }));
+  }
+  const cards = generateCards(records);
+  const fixCard = cards.find(c => c.type === 'repeated-fix' && c.affectedFiles.includes('src/buggy.ts'));
+  assert.ok(fixCard, 'should generate fix card for buggy.ts');
+  assert.ok(fixCard!.suggestion.includes('src/buggy.ts'), 'suggestion should contain file path');
+  assert.ok(fixCard!.suggestion.includes('crash') || fixCard!.suggestion.includes('timeout'),
+    'suggestion should reference commit subjects');
+});
+
+test('churn-hotspot suggestion contains file path and commit count', () => {
+  const records: ClassifiedCommit[] = Array.from({ length: 5 }, (_, i) =>
+    mockCommit({
+      sha: `ch${i}`,
+      subject: `change ${i}`,
+      files: [{ status: 'M', path: 'src/hot.ts' }],
+      paths: ['src/hot.ts'],
+    }),
+  );
+  const cards = generateCards(records);
+  const churnCard = cards.find(c => c.type === 'churn-hotspot' && c.affectedFiles.includes('src/hot.ts'));
+  assert.ok(churnCard, 'should generate churn card for hot.ts');
+  assert.ok(churnCard!.suggestion.includes('src/hot.ts'), 'suggestion should contain file path');
+  assert.ok(churnCard!.suggestion.includes('5') || churnCard!.suggestion.includes('commits'),
+    'suggestion should reference commit count');
+});
+
+test('co-change suggestion contains both file paths', () => {
+  const records: ClassifiedCommit[] = Array.from({ length: 3 }, (_, i) =>
+    mockCommit({
+      sha: `cc${i}`,
+      subject: `change ${i}`,
+      files: [
+        { status: 'M', path: 'src/a.ts' },
+        { status: 'M', path: 'src/b.ts' },
+      ],
+      paths: ['src/a.ts', 'src/b.ts'],
+    }),
+  );
+  const cards = generateCards(records);
+  const coCard = cards.find(c => c.type === 'co-change');
+  assert.ok(coCard, 'should generate co-change card');
+  assert.ok(coCard!.suggestion.includes('src/a.ts'), 'suggestion should contain first file');
+  assert.ok(coCard!.suggestion.includes('src/b.ts'), 'suggestion should contain second file');
+});
