@@ -6,6 +6,11 @@ import * as path from 'node:path';
 import * as childProcess from 'node:child_process';
 import { prepareTrain, formatTrain, generateDataset, findLatestAdapterCheckpoint } from '../src/training.js';
 import { formatTrainStatus, formatTrainList } from '../src/train-cycle.js';
+import { cachedOrGenerate } from '../src/cache.js';
+import { mineHistory } from '../src/git-history.js';
+import { classifyHistory } from '../src/signals.js';
+import { generateCards } from '../src/cards.js';
+import { getStatusOverrideMap, setCardStatus } from '../src/review.js';
 
 function setupRepo(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'repo-arch-test-'));
@@ -27,28 +32,12 @@ function setupRepo(): string {
 function setupRepoWithAcceptedCards(): string {
   const repo = setupRepo();
 
-  // Generate dataset to create cards, then accept them
-  const dataset = generateDataset({ repoPath: repo });
-  // The cards are pending, so train won't find accepted ones
-  // Accept cards manually via review state
-  const reviewDir = path.join(repo, '.repo-arch');
-  fs.mkdirSync(path.join(reviewDir, 'cards'), { recursive: true });
-
   // Mine history to get cards
-  const { cards } = (() => {
-    const { cachedOrGenerate } = require('../src/cache.js');
-    const { mineHistory } = require('../src/git-history.js');
-    const { classifyHistory } = require('../src/signals.js');
-    const { generateCards } = require('../src/cards.js');
-    const { getStatusOverrideMap } = require('../src/review.js');
-    const history = mineHistory({ repoPath: repo });
-    const classified = classifyHistory(history.records);
-    const cards = generateCards(classified, {}, getStatusOverrideMap(repo));
-    return { cards };
-  })();
+  const history = mineHistory({ repoPath: repo });
+  const classified = classifyHistory(history.records);
+  const cards = generateCards(classified, {}, getStatusOverrideMap(repo));
 
   // Accept all cards
-  const { setCardStatus } = require('../src/review.js');
   for (const card of cards) {
     setCardStatus(repo, card.id, 'accepted');
   }
@@ -139,4 +128,29 @@ test('formatTrainStatus and formatTrainList render persistent training state', (
   assert.ok(status.includes('run-123-qwen'));
   assert.ok(status.includes('Latest checkpoint'));
   assert.ok(list.includes('run-123-qwen'));
+});
+
+test('generateDataset creates diverse negative example answers', () => {
+  const repo = setupRepoWithAcceptedCards();
+  const result = generateDataset({ repoPath: repo });
+  
+  // Get all negative examples
+  const negatives = result.examples.filter(ex => ex.taskType === 'negative');
+  assert.ok(negatives.length > 0, 'should have negative examples');
+  
+  // Collect unique assistant responses
+  const uniqueAnswers = new Set(negatives.map(ex => ex.messages[1]!.content));
+  // With the getAnswer() diversity function, we should have at least 3 unique templates
+  // among the generated negatives
+  assert.ok(uniqueAnswers.size >= 3,
+    `expected at least 3 unique negative answer templates, got ${uniqueAnswers.size}`);
+});
+
+test('generateDataset includes qa and risk-classification examples', () => {
+  const repo = setupRepoWithAcceptedCards();
+  const result = generateDataset({ repoPath: repo });
+  
+  assert.ok(result.counts.qa > 0, 'should have QA examples');
+  assert.ok(result.counts['risk-classification'] > 0, 'should have risk classification examples');
+  assert.ok(result.counts.negative > 0, 'should have negative examples');
 });

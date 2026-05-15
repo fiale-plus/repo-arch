@@ -75,17 +75,21 @@ export function helpFor(command: string): string | null {
     'accept': `repo-arch accept <card-id> --repo <path>
 
   Mark a card as accepted. Accepted cards are used in eval and training.
+  Card IDs are 16 hex characters — use \`repo-arch cards\` to discover them.
 
   Example:
-    repo-arch accept abc123def456 --repo .
+    repo-arch accept 55a6c06de1d28481 --repo .
+
+  Tip: run \`repo-arch review list\` to see all cards and their statuses
 
   Next: repo-arch eval`,
     'reject': `repo-arch reject <card-id> --repo <path>
 
-  Mark a card as rejected (noisy / not useful).
+  Mark a card as rejected (noisy / not useful). Rejected cards are excluded
+  from eval benchmarks and training datasets.
 
   Example:
-    repo-arch reject abc123def456 --repo .`,
+    repo-arch reject 49238e9a8738f813 --repo .`,
     'review': `repo-arch review list --repo <path>
 
   Show all accepted/rejected card statuses.
@@ -132,9 +136,35 @@ export function helpFor(command: string): string | null {
 
   Example:
     repo-arch dataset --repo .`,
-    'train': `repo-arch train <prepare|run|cycle|resume|status|list> --repo <path> [--config <file>] [--out <dir>] [--model <name>] [--iters <n>] [--learning-rate <n>]
+    'train': `repo-arch train <prepare|run|cycle|resume|status|list> --repo <path> [options]
 
-  Prepare, run, or resume LoRA training.
+  LoRA fine-tuning workflow with MLX (Apple Silicon).
+
+  Modes:
+    prepare    Export training data as JSONL + build the mlx_lm.lora command
+    run        Prepare and execute training immediately
+    cycle      Run one training cycle (resumes from latest checkpoint)
+    resume     Resume training from the latest adapter checkpoint
+    status     Show current training session info and latest checkpoint
+    list       List all training sessions for this repo
+
+  Options:
+    --model <name>       Base model (default: Qwen/Qwen2.5-Coder-1.5B-Instruct)
+    --iters <n>          Training iterations per cycle (default: 100)
+    --learning-rate <n>  Learning rate (default: 1e-5)
+
+  Workflow:
+    1. repo-arch accept <card-id> — curate which cards to train on
+    2. repo-arch dataset --repo . — generate training examples
+    3. repo-arch train prepare --repo . — create training plan
+    4. repo-arch train cycle --repo . — run one training cycle
+    5. repo-arch train status --repo . — check convergence
+
+  Validation loss guide:
+    < 0.3   Excellent — model converged well
+    0.3-0.6 Good — more iterations may help
+    0.6-1.0 Moderate — consider more data or more iterations
+    > 1.0   Poor — check training data quality or increase layers
 
   Examples:
     repo-arch train prepare --repo .
@@ -142,7 +172,7 @@ export function helpFor(command: string): string | null {
     repo-arch train cycle --repo .
     repo-arch train resume --repo .
     repo-arch train status --repo .
-    repo-arch train list`,
+    repo-arch train list --repo .`,
     'flow': `repo-arch flow run [prepare|full] --repo <path> [--config repo-arch.config.json]
 
   Orchestrate the end-to-end flow: history -> cards -> dataset -> train plan -> embeddings/eval.
@@ -485,7 +515,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<{ ok
         const icon = card.type === 'churn-hotspot' ? '\u26A1' : card.type === 'repeated-fix' ? '\u274C' : card.type === 'revert-pattern' ? '\u21A9' : card.type === 'test-gap' ? '\u26A0' : card.type === 'rationale-cluster' ? '\uD83D\uDCA1' : '\uD83D\uDD17';
         const statusTag = card.status === 'accepted' ? ' ✅' : card.status === 'rejected' ? ' [rejected]' : '';
         process.stdout.write(`  ${icon} ${card.title}${statusTag}\n`);
-        process.stdout.write(`     [${card.id.slice(0, 10)}] Confidence: ${card.confidence} | ${card.supportingCommits.length} commits\n`);
+        process.stdout.write(`     [${card.id}] Confidence: ${card.confidence} | ${card.supportingCommits.length} commits\n`);
         process.stdout.write(`     ${card.suggestion}\n\n`);
       }
     } else {
@@ -602,7 +632,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<{ ok
       process.stdout.write(`  Index: ${result.indexStats.entries} entries (${result.indexStats.model}) at ${result.indexStats.headSha}\n\n`);
       for (const r of result.results) {
         process.stdout.write(`  ${r.score.toFixed(3)}  ${r.text.slice(0, 100)}...\n`);
-        process.stdout.write(`        [${r.id.slice(0, 10)}] ${r.metadata.type}\n\n`);
+        process.stdout.write(`        [${r.id}] ${r.metadata.type}\n\n`);
       }
     }
     return { ok: true };
@@ -719,6 +749,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<{ ok
     }
     const repoRoot = resolveRepoRoot(args.repo);
     const entry = setCardStatus(repoRoot, cardId, 'accepted');
+    invalidateCache(repoRoot);
     process.stderr.write(`accepted card ${cardId} at ${entry?.updatedAt}\n`);
     return { ok: true };
   }
@@ -732,6 +763,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<{ ok
     }
     const repoRoot = resolveRepoRoot(args.repo);
     const entry = setCardStatus(repoRoot, cardId, 'rejected');
+    invalidateCache(repoRoot);
     process.stderr.write(`rejected card ${cardId} at ${entry?.updatedAt}\n`);
     return { ok: true };
   }
@@ -747,7 +779,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<{ ok
       } else {
         process.stdout.write(`  Review state (${entries.length} cards)\n\n`);
         for (const [id, entry] of entries) {
-          process.stdout.write(`  [${id.slice(0, 10)}] ${entry.status}  ${entry.updatedAt.slice(0, 10)}\n`);
+          process.stdout.write(`  [${id}] ${entry.status}  ${entry.updatedAt.slice(0, 10)}\n`);
         }
       }
     } else {
