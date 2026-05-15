@@ -7,9 +7,28 @@
 
 Local project-memory engine for git history.
 
+## Quickstart
+
 ```bash
 npm install -g @fiale-plus/repo-arch
+
+cd your-project
+export OPENAI_API_KEY=sk-...   # or GEMINI_API_KEY
+
+repo-arch init                  # write starter config
+repo-arch flow run --repo .     # mine history → cards → dataset
+repo-arch flow inspect --repo . # see what was produced
 ```
+
+Then curate and train:
+
+```bash
+repo-arch review list           # review generated cards
+repo-arch accept <card-id>      # mark valuable cards
+repo-arch train run --repo .    # fine-tune on accepted cards
+```
+
+Requires Node 18+ and (for training) Apple Silicon with MLX.
 
 Repo-Arch mines repository history, classifies commit signals, builds cards, explains files, warns on diffs, checks staleness, runs similarity search, prepares evals, and generates training data.
 
