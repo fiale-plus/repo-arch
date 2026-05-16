@@ -17,6 +17,8 @@ export type GitHistoryRecord = {
   subject: string;
   files: GitFileChange[];
   paths: string[];
+  /** Detected package/workspace for monorepo support */
+  packageId?: string;
 };
 
 export type MineHistoryOptions = {
@@ -71,6 +73,8 @@ export function parseGitHistory(logOutput: string): GitHistoryRecord[] {
   const pushCurrent = (): void => {
     if (!current) return;
     current.paths = current.files.map(file => file.path);
+    // Detect package from first file path
+    current.packageId = detectPackage(current.paths[0] ?? '');
     records.push(current);
     current = null;
   };
@@ -132,6 +136,13 @@ export function mineHistory({ repoPath, outPath }: MineHistoryOptions = {}): Min
       '--find-renames=50%'
     ]);
     records = parseGitHistory(logOutput);
+    // Deduplicate by SHA
+    const seenShas = new Set<string>();
+    records = records.filter(r => {
+      if (seenShas.has(r.sha)) return false;
+      seenShas.add(r.sha);
+      return true;
+    });
     const jsonl = records.map(record => JSON.stringify(record)).join('\n') + (records.length ? '\n' : '');
     ensureDir(cacheFile);
     fs.writeFileSync(cacheFile, jsonl, 'utf8');
@@ -152,4 +163,38 @@ export function mineHistory({ repoPath, outPath }: MineHistoryOptions = {}): Min
     records,
     jsonl
   };
+}
+
+/**
+ * Detect package/workspace from a file path.
+ * Checks for common monorepo package roots.
+ */
+export function detectPackage(filePath: string): string {
+  // Check for packages/ prefix (npm workspaces)
+  const pkgMatch = filePath.match(/^(packages\/[^/]+)/);
+  if (pkgMatch) return pkgMatch[1];
+
+  // Check for apps/ prefix (turborepo style)
+  const appMatch = filePath.match(/^(apps\/[^/]+)/);
+  if (appMatch) return appMatch[1];
+
+  // Check for libs/ prefix (nx style)
+  const libMatch = filePath.match(/^(libs\/[^/]+)/);
+  if (libMatch) return libMatch[1];
+
+  // Root-level files
+  const parts = filePath.split('/');
+  if (parts.length === 1) return '<root>';
+  return '<root>';  // not detected in a known workspace layout
+}
+
+/**
+ * Generate a stable dedup key for a git file change.
+ * Used to prevent duplicate history records.
+ */
+export function fileDedupKey(sha: string, filePath: string): string {
+  return crypto.createHash('sha256')
+    .update(`${sha}:${filePath}`)
+    .digest('hex')
+    .slice(0, 32);
 }

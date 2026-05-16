@@ -20,6 +20,10 @@ export type InsightCard = {
   supportingCommits: { sha: string; subject: string }[];
   affectedFiles: string[];
   suggestion: string;
+  /** Detected monorepo package */
+  packageId?: string;
+  /** Time-decayed score */
+  decayedScore?: number;
 };
 
 export type CardsOptions = {
@@ -42,12 +46,60 @@ export function cardIdFrom(type: CardType, title: string, affectedFiles: string[
   return crypto.createHash('sha256').update(raw).digest('hex').slice(0, 16);
 }
 
-function toCard(data: { type: CardType; title: string; confidence: number; supportingCommits: { sha: string; subject: string }[]; affectedFiles: string[]; suggestion: string }, statusOverride?: CardStatus): InsightCard {
+function toCard(data: { type: CardType; title: string; confidence: number; supportingCommits: { sha: string; subject: string }[]; affectedFiles: string[]; suggestion: string; packageId?: string; decayedScore?: number }, statusOverride?: CardStatus): InsightCard {
   return {
     ...data,
     id: cardIdFrom(data.type, data.title, data.affectedFiles),
     status: statusOverride ?? 'pending',
   };
+}
+
+// ─── Time-decayed scoring ────────────────────────────────
+
+const HALF_LIFE_FIX = 180;     // days — bug fixes lose relevance over 6 months
+const HALF_LIFE_CHURN = 180;   // days — churn patterns over 6 months
+const HALF_LIFE_ARCH = 365;    // days — architectural changes last a year
+const MIN_DECAY = 0.5;         // minimum decay factor to prevent cards from vanishing
+
+export function timeDecay(dateStr: string, halfLifeDays: number): number {
+  if (!dateStr) return 1.0;
+  const commitDate = new Date(dateStr).getTime();
+  if (isNaN(commitDate)) return 1.0;
+  const now = Date.now();
+  const ageDays = (now - commitDate) / (1000 * 60 * 60 * 24);
+  if (ageDays <= 0) return 1.0;
+  return Math.max(MIN_DECAY, Math.exp(-ageDays / halfLifeDays));
+}
+
+export function decayedScore(count: number, latestDate: string, halfLifeDays: number): number {
+  return count * timeDecay(latestDate, halfLifeDays);
+}
+
+export function boundedSuggestion(subjects: string[], maxExamples = 3): string {
+  if (subjects.length <= maxExamples) return subjects.join('; ');
+  return subjects.slice(0, maxExamples).join('; ') + `; (and ${subjects.length - maxExamples} more)`;
+}
+
+// ─── Package detection ────────────────────────────────────
+
+export function detectPackage(filePath: string): string {
+  const pkgMatch = filePath.match(/^(packages\/[^/]+)/);
+  if (pkgMatch) return pkgMatch[1];
+  const appMatch = filePath.match(/^(apps\/[^/]+)/);
+  if (appMatch) return appMatch[1];
+  const libMatch = filePath.match(/^(libs\/[^/]+)/);
+  if (libMatch) return libMatch[1];
+  const parts = filePath.split('/');
+  if (parts.length === 1) return '<root>';
+  return '<root>';
+}
+
+// ─── Proportional card budget ────────────────────────────
+
+export function computeCardBudget(recordCount: number, maxCards?: number): number {
+  if (maxCards !== undefined && maxCards > 0) return maxCards;
+  // Scale with repo size: 20 cards base + 1 per 200 commits, max 200
+  return Math.min(200, Math.max(20, Math.ceil(recordCount / 200)));
 }
 
 // ─── Generators ────────────────────────────────────────────
@@ -130,7 +182,7 @@ function repeatedFixCards(records: ClassifiedCommit[]): Omit<InsightCard, 'id' |
     confidence: Math.min(0.95, parseFloat((0.5 + (count - 1) * 0.1).toFixed(2))),
     supportingCommits: commits.slice(0, 5).map(r => ({ sha: r.sha, subject: r.subject })),
     affectedFiles: [file],
-    suggestion: `Repeated bug fixes in ${file}: this file was fixed ${count} separate times (commits: ${commits.map(c => c.subject).join(', ')}). Each fix suggests the underlying cause was not fully addressed — consider deeper root-cause analysis and regression tests for the affected code paths.`,
+    suggestion: `Repeated bug fixes in ${file}: this file was fixed ${count} separate times. Examples: ${boundedSuggestion(commits.map(c => c.subject), 3)} Each fix suggests the underlying cause was not fully addressed — consider deeper root-cause analysis and regression tests for the affected code paths.`,
   }));
 }
 
@@ -271,7 +323,7 @@ function coChangeCards(records: ClassifiedCommit[]): Omit<InsightCard, 'id' | 's
     confidence: parseFloat((0.3 + count * 0.05).toFixed(2)),
     supportingCommits: commits.slice(0, 5).map(r => ({ sha: r.sha, subject: r.subject })),
     affectedFiles: [a, b],
-    suggestion: `Coupled change: ${a} and ${b} were modified together in ${count} commits (subjects: ${commits.map(c => c.subject).join(', ')}). Consider whether these should be merged, refactored to reduce coupling, or share common tests.`,
+    suggestion: `Coupled change: ${a} and ${b} were modified together in ${count} commits. Examples: ${boundedSuggestion(commits.map(c => c.subject), 3)} Consider whether these should be merged, refactored to reduce coupling, or share common tests.`,
   }));
 }
 
@@ -352,14 +404,28 @@ export function generateCards(
   statusOverrides?: Record<string, CardStatus>,
 ): InsightCard[] {
   const minConfidence = options.minConfidence ?? 0.3;
-  const maxCards = options.maxCards ?? 20;
+  const maxCards = computeCardBudget(classifiedRecords.length, options.maxCards);
 
   const allCards: ScoredCard[] = [];
   for (const generator of CARD_GENERATORS) {
     const cards = generator.run(classifiedRecords);
     for (const card of cards) {
+      const pkg = detectPackage(card.affectedFiles[0] ?? '');
+      // Apply time-decayed score to confidence
+      const latestDate = card.supportingCommits.length > 0
+        ? (classifiedRecords.find(r => r.sha === card.supportingCommits[0].sha)?.authoredAt ?? '')
+        : '';
+      const halfLife = card.type === 'repeated-fix' ? HALF_LIFE_FIX
+        : card.type === 'churn-hotspot' ? HALF_LIFE_CHURN
+        : HALF_LIFE_ARCH;
+      const decay = timeDecay(latestDate, halfLife);
+      const decayedConfidence = parseFloat((card.confidence * decay).toFixed(2));
+
       allCards.push({
         ...card,
+        confidence: decayedConfidence,
+        packageId: pkg,
+        decayedScore: parseFloat((card.confidence * decay).toFixed(3)),
         key: cardIdFrom(card.type, card.title, card.affectedFiles),
         bucket: classifyCardBucket(card),
       });
@@ -368,47 +434,47 @@ export function generateCards(
 
   const eligible = allCards
     .filter(card => card.confidence >= minConfidence)
-    .sort(sortDesc);
+    .sort((a, b) => (b.decayedScore ?? b.confidence) - (a.decayedScore ?? a.confidence));
+
+  // Proportional card budget by bucket
+  const sourceCount = eligible.filter(c => c.bucket === 'source').length;
+  const configCount = eligible.filter(c => c.bucket === 'config').length;
+  const rationaleCount = eligible.filter(c => c.bucket === 'rationale').length;
+  const otherCount = eligible.filter(c => c.bucket === 'other').length;
+  const total = Math.max(1, sourceCount + configCount + rationaleCount + otherCount);
+
+  const sourceQuota = Math.max(1, Math.round(maxCards * sourceCount / total));
+  const configQuota = Math.max(1, Math.round(maxCards * configCount / total));
+  const rationaleQuota = Math.max(0, Math.round(maxCards * rationaleCount / total));
+  const otherQuota = Math.max(1, maxCards - sourceQuota - configQuota - rationaleQuota);
 
   const buckets: Record<CardBucket, ScoredCard[]> = {
-    source: [],
-    config: [],
-    rationale: [],
-    other: [],
+    source: [], config: [], rationale: [], other: [],
   };
-  for (const card of eligible) {
-    buckets[card.bucket].push(card);
-  }
+  for (const card of eligible) buckets[card.bucket].push(card);
 
   const selected: ScoredCard[] = [];
   const selectedKeys = new Set<string>();
-  const pushCard = (card: ScoredCard): void => {
-    if (selected.length >= maxCards || selectedKeys.has(card.key)) return;
-    selected.push(card);
-    selectedKeys.add(card.key);
-  };
+
   const take = (bucket: CardBucket, quota: number): void => {
     for (const card of buckets[bucket]) {
-      if (selected.length >= maxCards) break;
-      if (quota <= 0) break;
-      if (selectedKeys.has(card.key)) continue;
-      pushCard(card);
+      if (selected.length >= maxCards || quota <= 0 || selectedKeys.has(card.key)) break;
+      selected.push(card);
+      selectedKeys.add(card.key);
       quota -= 1;
     }
   };
 
-  const sourceQuota = Math.min(Math.max(1, Math.round(maxCards * 0.45)), Math.min(10, maxCards));
-  const configQuota = Math.min(Math.max(1, Math.round(maxCards * 0.25)), Math.max(0, maxCards - sourceQuota));
-  const rationaleQuota = Math.min(Math.max(0, Math.round(maxCards * 0.15)), Math.max(0, maxCards - sourceQuota - configQuota));
-
   take('source', sourceQuota);
   take('config', configQuota);
   take('rationale', rationaleQuota);
+  take('other', otherQuota);
 
   for (const card of eligible) {
     if (selected.length >= maxCards) break;
     if (selectedKeys.has(card.key)) continue;
-    pushCard(card);
+    selected.push(card);
+    selectedKeys.add(card.key);
   }
 
   return selected
