@@ -17,6 +17,12 @@ export type DatasetOptions = {
   repoPath?: string;
   outPath?: string;
   includeRejected?: boolean;
+  /**
+   * When true, generate context-augmented examples:
+   * user gets card metadata + question, assistant gets answer
+   * instead of plain question -> answer.
+   */
+  contextFormat?: boolean;
 };
 
 export type DatasetResult = {
@@ -27,6 +33,24 @@ export type DatasetResult = {
   examples: DatasetExample[];
   counts: { qa: number; 'review-warning': number; 'risk-classification': number; negative: number };
 };
+
+/**
+ * Format card metadata into a context block for context-augmented training.
+ */
+export function formatCardContext(card: InsightCard): string {
+  const lines = [
+    `<CARD type="${card.type}" confidence="${card.confidence}">`,
+    `  Summary: ${card.suggestion.slice(0, 300)}`,
+  ];
+  if (card.affectedFiles.length > 0) {
+    lines.push(`  Files: ${card.affectedFiles.join(', ')}`);
+  }
+  if (card.packageId) {
+    lines.push(`  Package: ${card.packageId}`);
+  }
+  lines.push('</CARD>');
+  return lines.join('\n');
+}
 
 export function generateQa(card: InsightCard): DatasetExample[] {
   const examples: DatasetExample[] = [];
@@ -273,9 +297,24 @@ export function generateDataset(options: DatasetOptions = {}): DatasetResult {
   const examples: DatasetExample[] = [];
 
   for (const card of acceptedCards) {
-    examples.push(...generateQa(card));
-    examples.push(...generateReviewWarning(card));
-    examples.push(...generateRiskClassification(card));
+    const qaExamples = generateQa(card);
+    const reviewExamples = generateReviewWarning(card);
+    const riskExamples = generateRiskClassification(card);
+
+    // Wrap in context format if requested
+    if (options.contextFormat) {
+      const contextBlock = formatCardContext(card);
+      for (const ex of [...qaExamples, ...reviewExamples, ...riskExamples]) {
+        ex.messages[0] = {
+          role: 'user',
+          content: `Use the following repo-arch card as context.\n\n${contextBlock}\n\n${ex.messages[0]!.content}`,
+        };
+      }
+    }
+
+    examples.push(...qaExamples);
+    examples.push(...reviewExamples);
+    examples.push(...riskExamples);
   }
 
   examples.push(...generateNegative(cards));
