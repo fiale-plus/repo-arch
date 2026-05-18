@@ -19,6 +19,12 @@ import { generateDataset, formatDataset, prepareTrain, formatTrain } from './tra
 import { loadRepoArchConfig, writeRepoArchConfigTemplate, DEFAULT_CONFIG_FILE } from './config.js';
 import { runFlow, inspectFlow, formatFlowRun, formatFlowInspect } from './flow.js';
 import { runTrainCycle, loadTrainSession, listTrainSessions, formatTrainCycleResult, formatTrainStatus, formatTrainList } from './train-cycle.js';
+import { classifyCommand, formatDecision as formatCommandDecision } from './reflex/classify-command.js';
+import { classifyEdit, loadFragileMap, formatEditDecision } from './reflex/classify-edit.js';
+import { generateTestPlan, formatTestPlan } from './reflex/test-plan.js';
+import { installPiHook, runInstallPi } from './reflex/install-pi.js';
+import { logEvent, loadEvents, summarizeEvents } from './reflex/events.js';
+import { buildDataset, formatDatasetSummary } from './reflex/dataset.js';
 
 export type ParsedArgs = {
   help?: boolean;
@@ -788,6 +794,136 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<{ ok
       return { ok: false, error: 'Expected subcommand: list' };
     }
     return { ok: true };
+  }
+
+  // ── Reflex: runtime guardrails ────────────────────────────────────
+
+  if (command === 'reflex') {
+    const sub = args._[1];
+    const repoRoot = resolveRepoRoot(args.repo);
+
+    if (sub === 'check') {
+      const input = args._.slice(2).join(' ');
+      if (!input) {
+        process.stderr.write('Usage: repo-arch reflex check <command-or-file>\n');
+        process.exitCode = 1;
+        return { ok: false, error: 'Missing input' };
+      }
+      // classify as command if it looks like shell
+      const decision = input.trim().startsWith('/') || /[;|&$`]|\|\|/.test(input)
+        ? classifyCommand(input)
+        : { decision: classifyEdit(input, repoRoot).riskLevel as any, riskLevel: classifyEdit(input, repoRoot).riskLevel, reason: 'file-edit classifier' };
+      if (args.json) {
+        process.stdout.write(JSON.stringify(decision, null, 2) + '\n');
+      } else {
+        process.stdout.write(formatCommandDecision(decision, input) + '\n');
+      }
+      return { ok: true };
+    }
+
+    if (sub === 'check-command') {
+      const cmd = args._.slice(2).join(' ');
+      if (!cmd) {
+        process.stderr.write('Usage: repo-arch reflex check-command <shell-command>\n');
+        process.exitCode = 1;
+        return { ok: false, error: 'Missing command' };
+      }
+      const result = classifyCommand(cmd);
+      logEvent(repoRoot, result.decision === 'allow' ? 'command_allowed' :
+               result.decision === 'ask' ? 'command_asked' : 'command_blocked',
+               { command: cmd, riskLevel: result.riskLevel, reason: result.reason });
+      if (args.json) {
+        process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      } else {
+        process.stdout.write(formatCommandDecision(result, cmd) + '\n');
+      }
+      return { ok: true };
+    }
+
+    if (sub === 'check-edit') {
+      const file = args._[2];
+      if (!file) {
+        process.stderr.write('Usage: repo-arch reflex check-edit <file-path>\n');
+        process.exitCode = 1;
+        return { ok: false, error: 'Missing file path' };
+      }
+      const fragileMap = loadFragileMap(repoRoot);
+      const result = classifyEdit(file, repoRoot, fragileMap);
+      logEvent(repoRoot, 'edit_classified', { filePath: file, ...result });
+      if (args.json) {
+        process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      } else {
+        process.stdout.write(formatEditDecision(result, file) + '\n');
+      }
+      return { ok: true };
+    }
+
+    if (sub === 'test-plan') {
+      const file = args._[2];
+      if (!file) {
+        process.stderr.write('Usage: repo-arch reflex test-plan <file-path>\n');
+        process.exitCode = 1;
+        return { ok: false, error: 'Missing file path' };
+      }
+      const result = generateTestPlan(file, repoRoot);
+      logEvent(repoRoot, 'test_plan_generated', { filePath: file, recommendations: result.recommendations });
+      if (args.json) {
+        process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      } else {
+        process.stdout.write(formatTestPlan(result) + '\n');
+      }
+      return { ok: true };
+    }
+
+    if (sub === 'install') {
+      const result = runInstallPi(repoRoot);
+      if (args.json) {
+        process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      } else {
+        process.stdout.write(`[OK] reflex hook installed\n`);
+      }
+      return { ok: true };
+    }
+
+    if (sub === 'events' || sub === 'log') {
+      const limit = parseInt(args._[2] ?? '100');
+      if (args.json) {
+        process.stdout.write(JSON.stringify(loadEvents(repoRoot).slice(-limit), null, 2) + '\n');
+      } else {
+        process.stdout.write(summarizeEvents(repoRoot, limit) + '\n');
+      }
+      return { ok: true };
+    }
+
+    if (sub === 'dataset') {
+      const result = buildDataset(repoRoot, {
+        outputDir: args.out || path.join(repoRoot, '.repo-arch', 'reflex', 'dataset'),
+        includeSynthetic: true,
+      });
+      if (args.json) {
+        process.stdout.write(JSON.stringify({ entries: result.entries.length, path: result.path }, null, 2) + '\n');
+      } else {
+        process.stdout.write(formatDatasetSummary(result) + '\n');
+      }
+      return { ok: true };
+    }
+
+    if (!sub) {
+      process.stdout.write(`reflex commands:
+  reflex check <input>            Classify command or file edit
+  reflex check-command <cmd>       Classify shell command
+  reflex check-edit <file>         Classify file edit
+  reflex test-plan <file>         Recommend tests for a file
+  reflex install                   Install Pi pre-action hook
+  reflex events [limit]            Show event log
+  reflex dataset                   Export training dataset
+`);
+      return { ok: true };
+    }
+
+    process.stderr.write(`Usage: repo-arch reflex [check|check-command|check-edit|test-plan|install|events|dataset]\n`);
+    process.exitCode = 1;
+    return { ok: false, error: `Unknown reflex subcommand: ${sub}` };
   }
 
   process.stderr.write(`Unknown command: ${command}\n\n${usage()}`);
